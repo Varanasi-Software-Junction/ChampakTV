@@ -1,0 +1,4 @@
+<resources>
+
+    <style name="Theme.ChampakTV" parent="@style/Theme.Leanback" />
+</resources>
