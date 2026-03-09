@@ -1,0 +1,2 @@
+rootProject.name = "PP TV"
+include(":app")
