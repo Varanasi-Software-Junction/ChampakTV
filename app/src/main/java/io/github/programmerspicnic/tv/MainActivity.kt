@@ -3,7 +3,7 @@ package io.github.programmerspicnic.tv
 import android.annotation.SuppressLint
 import android.os.Bundle
 import android.view.KeyEvent
-import android.view.View
+import android.view.ViewGroup
 import android.graphics.Bitmap
 import android.webkit.*
 import androidx.appcompat.app.AppCompatActivity
@@ -21,7 +21,7 @@ class MainActivity : AppCompatActivity() {
     web = WebView(this)
     web.isFocusable = true
     web.isFocusableInTouchMode = true
-    web.descendantFocusability = View.FOCUS_AFTER_DESCENDANTS
+    web.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
 
     val s = web.settings
     s.javaScriptEnabled = true
