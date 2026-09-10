@@ -4,15 +4,15 @@ plugins {
 }
 
 android {
-  namespace "io.github.programmerspicnic.tv"
+  namespace "com.learnwithchampak.tv"
   compileSdk 34
 
   defaultConfig {
-    applicationId "io.github.programmerspicnic.tv"
+    applicationId "com.learnwithchampak.tv"
     minSdk 21
     targetSdk 34
-    versionCode 1
-    versionName "1.0"
+    versionCode 2
+    versionName "1.1"
   }
 
   buildTypes {
