@@ -174,14 +174,33 @@ class MainActivity : AppCompatActivity() {
 
   private fun loadPhotoInto(imageView: ImageView) {
     try {
+      val input = assets.open("champak-photo.png")
+      val bitmap = BitmapFactory.decodeStream(input)
+      if (bitmap != null) {
+        imageView.setImageBitmap(bitmap)
+        Log.d(tag, "Loaded bundled PNG photo")
+        return
+      }
+    } catch (ex: Exception) {
+      Log.d(tag, "Bundled PNG photo not found, trying Base64 asset")
+    }
+
+    try {
       val input = assets.open("champak_photo.b64")
       val encoded = BufferedReader(InputStreamReader(input)).readText().replace("\n", "").trim()
+      if (encoded.isEmpty()) {
+        throw IllegalStateException("champak_photo.b64 is empty")
+      }
       val bytes = Base64.decode(encoded, Base64.DEFAULT)
       val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+      if (bitmap == null) {
+        throw IllegalStateException("Base64 photo could not be decoded")
+      }
       imageView.setImageBitmap(bitmap)
+      Log.d(tag, "Loaded bundled Base64 photo")
       return
     } catch (ex: Exception) {
-      Log.d(tag, "Bundled photo not found, trying hosted photo")
+      Log.d(tag, "Bundled Base64 photo not usable, trying hosted photo")
     }
 
     imageView.setBackgroundColor(Color.rgb(12, 84, 130))
@@ -189,9 +208,14 @@ class MainActivity : AppCompatActivity() {
 
     Thread {
       try {
-        val url = URL("https://programmer-s-picnic.github.io/json-images/mee%20-%20Copy.jpg")
+        val url = URL("https://programmer-s-picnic.github.io/json-images/tv/champak-photo.png")
         val bitmap = BitmapFactory.decodeStream(url.openStream())
-        runOnUiThread { imageView.setImageBitmap(bitmap) }
+        if (bitmap != null) {
+          runOnUiThread {
+            imageView.setImageBitmap(bitmap)
+            Log.d(tag, "Loaded hosted PNG photo")
+          }
+        }
       } catch (ex: Exception) {
         Log.e(tag, "Could not load hosted photo", ex)
       }
