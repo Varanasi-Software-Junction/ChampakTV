@@ -7,6 +7,8 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Base64
 import android.util.Log
 import android.view.Gravity
@@ -23,17 +25,42 @@ import androidx.appcompat.app.AppCompatActivity
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.URL
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
 
   private lateinit var statusText: TextView
+  private lateinit var clockText: TextView
   private lateinit var root: LinearLayout
   private val tag = "ChampakTV"
+  private val clockHandler = Handler(Looper.getMainLooper())
+  private val clockFormat = SimpleDateFormat("EEE, dd MMM yyyy • hh:mm:ss a", Locale.getDefault())
+
+  private val clockRunnable = object : Runnable {
+    override fun run() {
+      updateClock()
+      clockHandler.postDelayed(this, 1000)
+    }
+  }
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
     buildScreen()
+    clockHandler.post(clockRunnable)
+  }
+
+  override fun onDestroy() {
+    clockHandler.removeCallbacks(clockRunnable)
+    super.onDestroy()
+  }
+
+  private fun updateClock() {
+    if (::clockText.isInitialized) {
+      clockText.text = clockFormat.format(Date())
+    }
   }
 
   private fun buildScreen() {
@@ -83,6 +110,12 @@ class MainActivity : AppCompatActivity() {
     }
     root.addView(right, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 0.58f))
 
+    clockText = text("", 19f, Color.rgb(255, 221, 128), true).apply {
+      gravity = Gravity.RIGHT
+      setPadding(0, 0, 0, dp(8))
+    }
+    right.addView(clockText, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+
     val installBadge = text("Installed as: Learn With Champak TV", 16f, Color.rgb(255, 221, 128), true)
     installBadge.setPadding(0, 0, 0, dp(6))
     right.addView(installBadge)
@@ -125,7 +158,7 @@ class MainActivity : AppCompatActivity() {
       linkPanel.addView(space(10))
     }
 
-    statusText = text("Use TV remote: Up/Down to focus, OK to open.", 16f, Color.rgb(218, 240, 255), false)
+    statusText = text("Use TV remote: Up/Down to focus, OK to open inside Champak TV browser.", 16f, Color.rgb(218, 240, 255), false)
     statusText.setPadding(0, dp(18), 0, 0)
     right.addView(statusText)
 
@@ -156,19 +189,22 @@ class MainActivity : AppCompatActivity() {
       }
 
       setOnClickListener {
-        statusText.text = "Opening: $label"
-        openUrl(url)
+        statusText.text = "Opening inside app: $label"
+        openInsideApp(label, url)
       }
     }
   }
 
-  private fun openUrl(url: String) {
+  private fun openInsideApp(title: String, url: String) {
     try {
-      val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+      val intent = Intent(this, BrowserActivity::class.java).apply {
+        putExtra(BrowserActivity.EXTRA_TITLE, title)
+        putExtra(BrowserActivity.EXTRA_URL, url)
+      }
       startActivity(intent)
     } catch (ex: Exception) {
-      Toast.makeText(this, "No browser found for this link", Toast.LENGTH_LONG).show()
-      Log.e(tag, "Unable to open URL: $url", ex)
+      Toast.makeText(this, "Could not open browser screen", Toast.LENGTH_LONG).show()
+      Log.e(tag, "Unable to open internal browser: $url", ex)
     }
   }
 
@@ -208,8 +244,8 @@ class MainActivity : AppCompatActivity() {
 
     Thread {
       try {
-        val url = URL("https://programmer-s-picnic.github.io/json-images/tv/champak-photo.png")
-        val bitmap = BitmapFactory.decodeStream(url.openStream())
+        val imageUrl = URL("https://programmer-s-picnic.github.io/json-images/tv/champak-photo.png")
+        val bitmap = BitmapFactory.decodeStream(imageUrl.openStream())
         if (bitmap != null) {
           runOnUiThread {
             imageView.setImageBitmap(bitmap)
