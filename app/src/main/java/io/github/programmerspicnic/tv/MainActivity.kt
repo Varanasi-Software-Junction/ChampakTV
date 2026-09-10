@@ -1,94 +1,165 @@
 package io.github.programmerspicnic.tv
 
-import android.annotation.SuppressLint
+import android.app.Activity
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.util.Log
+import android.view.Gravity
 import android.view.KeyEvent
+import android.view.View
 import android.view.ViewGroup
-import android.graphics.Bitmap
-import android.webkit.*
-import androidx.appcompat.app.AppCompatActivity
+import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.TextView
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : Activity() {
 
-  private lateinit var web: WebView
-  private val START_URL = "https://github.com/Varanasi-Software-Junction/ChampakTV"
-  private val OFFLINE_URL = "file:///android_asset/offline.html"
+  private lateinit var statusText: TextView
+  private lateinit var helloText: TextView
 
-  @SuppressLint("SetJavaScriptEnabled")
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    Log.d("ChampakTV", "Hello World TV app started")
 
-    web = WebView(this)
-    web.isFocusable = true
-    web.isFocusableInTouchMode = true
-    web.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
+    val root = LinearLayout(this).apply {
+      orientation = LinearLayout.VERTICAL
+      gravity = Gravity.CENTER
+      setPadding(64, 48, 64, 48)
+      background = GradientDrawable(
+        GradientDrawable.Orientation.TOP_BOTTOM,
+        intArrayOf(Color.rgb(20, 10, 5), Color.rgb(70, 30, 10))
+      )
+      isFocusable = true
+      isFocusableInTouchMode = true
+      layoutParams = ViewGroup.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        ViewGroup.LayoutParams.MATCH_PARENT
+      )
+    }
 
-    val s = web.settings
-    s.javaScriptEnabled = true
-    s.domStorageEnabled = true
-    s.databaseEnabled = true
-    s.loadsImagesAutomatically = true
-    s.useWideViewPort = true
-    s.loadWithOverviewMode = true
-    s.mediaPlaybackRequiresUserGesture = false
-    s.cacheMode = WebSettings.LOAD_DEFAULT
-    s.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-    s.userAgentString = s.userAgentString + " PP-TV-WebView"
+    helloText = TextView(this).apply {
+      text = "Hello Champak TV"
+      textSize = 48f
+      setTextColor(Color.WHITE)
+      typeface = Typeface.DEFAULT_BOLD
+      gravity = Gravity.CENTER
+    }
 
-    web.webChromeClient = WebChromeClient()
+    val subtitle = TextView(this).apply {
+      text = "A fresh Android TV app begins here"
+      textSize = 24f
+      setTextColor(Color.rgb(255, 215, 150))
+      gravity = Gravity.CENTER
+      setPadding(0, 16, 0, 32)
+    }
 
-    web.webViewClient = object : WebViewClient() {
-      private var hadMainLoadError = false
+    statusText = TextView(this).apply {
+      text = "Use TV remote: Up / Down / OK"
+      textSize = 22f
+      setTextColor(Color.rgb(255, 238, 180))
+      gravity = Gravity.CENTER
+      setPadding(0, 0, 0, 36)
+    }
 
-      override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-        if (url == START_URL) hadMainLoadError = false
-        super.onPageStarted(view, url, favicon)
+    val startButton = tvButton("Start") {
+      helloText.text = "Remote OK works"
+      statusText.text = "Start button selected"
+      Log.d("ChampakTV", "Start button clicked")
+    }
+
+    val exitButton = tvButton("Exit") {
+      statusText.text = "Exit selected"
+      Log.d("ChampakTV", "Exit button clicked")
+      finish()
+    }
+
+    root.addView(helloText, LinearLayout.LayoutParams(
+      ViewGroup.LayoutParams.MATCH_PARENT,
+      ViewGroup.LayoutParams.WRAP_CONTENT
+    ))
+    root.addView(subtitle, LinearLayout.LayoutParams(
+      ViewGroup.LayoutParams.MATCH_PARENT,
+      ViewGroup.LayoutParams.WRAP_CONTENT
+    ))
+    root.addView(statusText, LinearLayout.LayoutParams(
+      ViewGroup.LayoutParams.MATCH_PARENT,
+      ViewGroup.LayoutParams.WRAP_CONTENT
+    ))
+    root.addView(startButton, buttonLayoutParams())
+    root.addView(exitButton, buttonLayoutParams())
+
+    setContentView(root)
+
+    startButton.post {
+      startButton.requestFocus()
+    }
+  }
+
+  private fun tvButton(label: String, onClick: () -> Unit): Button {
+    return Button(this).apply {
+      text = label
+      textSize = 26f
+      setTextColor(Color.WHITE)
+      isAllCaps = false
+      isFocusable = true
+      isFocusableInTouchMode = true
+      minHeight = 86
+      setPadding(40, 16, 40, 16)
+      background = buttonBackground(false)
+
+      setOnFocusChangeListener { view, hasFocus ->
+        view.background = buttonBackground(hasFocus)
+        statusText.text = if (hasFocus) "Focused: $label" else statusText.text
+        Log.d("ChampakTV", "Focus ${if (hasFocus) "entered" else "left"}: $label")
       }
 
-      override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
-        if (request.isForMainFrame && request.url.toString().startsWith(START_URL)) {
-          hadMainLoadError = true
-        }
-        super.onReceivedError(view, request, error)
+      setOnClickListener {
+        onClick()
+      }
+    }
+  }
+
+  private fun buttonLayoutParams(): LinearLayout.LayoutParams {
+    return LinearLayout.LayoutParams(420, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+      topMargin = 18
+      bottomMargin = 18
+    }
+  }
+
+  private fun buttonBackground(focused: Boolean): GradientDrawable {
+    return GradientDrawable().apply {
+      shape = GradientDrawable.RECTANGLE
+      cornerRadius = 24f
+      setColor(if (focused) Color.rgb(255, 140, 0) else Color.rgb(95, 45, 20))
+      setStroke(
+        if (focused) 6 else 2,
+        if (focused) Color.WHITE else Color.rgb(180, 120, 70)
+      )
+    }
+  }
+
+  override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+    if (event.action == KeyEvent.ACTION_DOWN) {
+      val keyName = when (event.keyCode) {
+        KeyEvent.KEYCODE_DPAD_UP -> "UP"
+        KeyEvent.KEYCODE_DPAD_DOWN -> "DOWN"
+        KeyEvent.KEYCODE_DPAD_LEFT -> "LEFT"
+        KeyEvent.KEYCODE_DPAD_RIGHT -> "RIGHT"
+        KeyEvent.KEYCODE_DPAD_CENTER,
+        KeyEvent.KEYCODE_ENTER,
+        KeyEvent.KEYCODE_NUMPAD_ENTER -> "OK"
+        KeyEvent.KEYCODE_BACK -> "BACK"
+        else -> null
       }
 
-      override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, errorResponse: WebResourceResponse) {
-        if (request.isForMainFrame && request.url.toString().startsWith(START_URL)) {
-          hadMainLoadError = true
-        }
-        super.onReceivedHttpError(view, request, errorResponse)
-      }
-
-      override fun onPageFinished(view: WebView, url: String?) {
-        if (url == START_URL && hadMainLoadError) {
-          view.loadUrl(OFFLINE_URL)
-          return
-        }
-        super.onPageFinished(view, url)
-      }
-
-      override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-        return false
+      if (keyName != null) {
+        statusText.text = "Key pressed: $keyName"
+        Log.d("ChampakTV", "Key pressed: $keyName")
       }
     }
 
-    setContentView(web)
-    web.loadUrl(START_URL)
-    web.post { web.requestFocus() }
-  }
-
-  override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-    if (keyCode == KeyEvent.KEYCODE_BACK) {
-      if (this::web.isInitialized && web.canGoBack()) {
-        web.goBack()
-        return true
-      }
-    }
-    return super.onKeyDown(keyCode, event)
-  }
-
-  override fun onDestroy() {
-    if (this::web.isInitialized) web.destroy()
-    super.onDestroy()
+    return super.dispatchKeyEvent(event)
   }
 }
