@@ -1,165 +1,240 @@
 package io.github.programmerspicnic.tv
 
-import android.app.Activity
+import android.content.Intent
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.net.Uri
 import android.os.Bundle
+import android.util.Base64
 import android.util.Log
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
-import android.view.ViewGroup
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.Space
 import android.widget.TextView
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import java.io.BufferedReader
+import java.io.InputStreamReader
 
-class MainActivity : Activity() {
+class MainActivity : AppCompatActivity() {
 
   private lateinit var statusText: TextView
-  private lateinit var helloText: TextView
+  private lateinit var root: LinearLayout
+  private val tag = "ChampakTV"
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
-    Log.d("ChampakTV", "Hello World TV app started")
-
-    val root = LinearLayout(this).apply {
-      orientation = LinearLayout.VERTICAL
-      gravity = Gravity.CENTER
-      setPadding(64, 48, 64, 48)
-      background = GradientDrawable(
-        GradientDrawable.Orientation.TOP_BOTTOM,
-        intArrayOf(Color.rgb(20, 10, 5), Color.rgb(70, 30, 10))
-      )
-      isFocusable = true
-      isFocusableInTouchMode = true
-      layoutParams = ViewGroup.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT,
-        ViewGroup.LayoutParams.MATCH_PARENT
-      )
-    }
-
-    helloText = TextView(this).apply {
-      text = "Hello Champak TV"
-      textSize = 48f
-      setTextColor(Color.WHITE)
-      typeface = Typeface.DEFAULT_BOLD
-      gravity = Gravity.CENTER
-    }
-
-    val subtitle = TextView(this).apply {
-      text = "A fresh Android TV app begins here"
-      textSize = 24f
-      setTextColor(Color.rgb(255, 215, 150))
-      gravity = Gravity.CENTER
-      setPadding(0, 16, 0, 32)
-    }
-
-    statusText = TextView(this).apply {
-      text = "Use TV remote: Up / Down / OK"
-      textSize = 22f
-      setTextColor(Color.rgb(255, 238, 180))
-      gravity = Gravity.CENTER
-      setPadding(0, 0, 0, 36)
-    }
-
-    val startButton = tvButton("Start") {
-      helloText.text = "Remote OK works"
-      statusText.text = "Start button selected"
-      Log.d("ChampakTV", "Start button clicked")
-    }
-
-    val exitButton = tvButton("Exit") {
-      statusText.text = "Exit selected"
-      Log.d("ChampakTV", "Exit button clicked")
-      finish()
-    }
-
-    root.addView(helloText, LinearLayout.LayoutParams(
-      ViewGroup.LayoutParams.MATCH_PARENT,
-      ViewGroup.LayoutParams.WRAP_CONTENT
-    ))
-    root.addView(subtitle, LinearLayout.LayoutParams(
-      ViewGroup.LayoutParams.MATCH_PARENT,
-      ViewGroup.LayoutParams.WRAP_CONTENT
-    ))
-    root.addView(statusText, LinearLayout.LayoutParams(
-      ViewGroup.LayoutParams.MATCH_PARENT,
-      ViewGroup.LayoutParams.WRAP_CONTENT
-    ))
-    root.addView(startButton, buttonLayoutParams())
-    root.addView(exitButton, buttonLayoutParams())
-
-    setContentView(root)
-
-    startButton.post {
-      startButton.requestFocus()
-    }
+    requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+    buildScreen()
   }
 
-  private fun tvButton(label: String, onClick: () -> Unit): Button {
+  private fun buildScreen() {
+    val scroll = ScrollView(this).apply {
+      isFocusable = false
+      setBackgroundColor(Color.rgb(4, 15, 32))
+    }
+
+    root = LinearLayout(this).apply {
+      orientation = LinearLayout.HORIZONTAL
+      gravity = Gravity.CENTER_VERTICAL
+      setPadding(dp(44), dp(28), dp(44), dp(28))
+      background = GradientDrawable(
+        GradientDrawable.Orientation.TL_BR,
+        intArrayOf(Color.rgb(3, 19, 46), Color.rgb(8, 74, 128), Color.rgb(2, 13, 28))
+      )
+    }
+
+    val left = LinearLayout(this).apply {
+      orientation = LinearLayout.VERTICAL
+      gravity = Gravity.CENTER
+    }
+    root.addView(left, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 0.42f))
+
+    val photo = ImageView(this).apply {
+      adjustViewBounds = true
+      scaleType = ImageView.ScaleType.CENTER_CROP
+      background = rounded(Color.rgb(255, 255, 255), dp(26), Color.rgb(74, 198, 255), dp(3))
+      setPadding(dp(6), dp(6), dp(6), dp(6))
+      loadPhotoInto(this)
+    }
+    left.addView(photo, LinearLayout.LayoutParams(dp(310), dp(310)))
+
+    left.addView(space(18))
+
+    val name = text("Champak Roy", 30f, Color.WHITE, true)
+    left.addView(name)
+
+    val role = text("AI • ML • Python • DSA • Programming", 17f, Color.rgb(202, 232, 255), false)
+    role.gravity = Gravity.CENTER
+    left.addView(role)
+
+    val right = LinearLayout(this).apply {
+      orientation = LinearLayout.VERTICAL
+      gravity = Gravity.CENTER_VERTICAL
+      setPadding(dp(34), 0, 0, 0)
+    }
+    root.addView(right, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 0.58f))
+
+    val title1 = text("Learn With", 46f, Color.WHITE, true)
+    val title2 = text("Champak", 62f, Color.rgb(77, 207, 255), true)
+    title2.setShadowLayer(10f, 0f, 4f, Color.rgb(0, 0, 0))
+    right.addView(title1)
+    right.addView(title2)
+
+    val subtitle = text("Study AI, ML, Python, DSA and Programming with Champak Roy", 22f, Color.WHITE, true)
+    subtitle.setPadding(0, dp(8), 0, dp(16))
+    right.addView(subtitle)
+
+    val tagLine = text("Learn. Build. Grow.", 24f, Color.rgb(255, 221, 128), true)
+    right.addView(tagLine)
+
+    right.addView(space(18))
+
+    val linkPanel = LinearLayout(this).apply {
+      orientation = LinearLayout.VERTICAL
+      setPadding(dp(22), dp(18), dp(22), dp(18))
+      background = rounded(Color.argb(235, 255, 255, 255), dp(24), Color.rgb(82, 204, 255), dp(2))
+    }
+    right.addView(linkPanel, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+
+    val linksHeading = text("Blogs & Learning Links", 25f, Color.rgb(3, 44, 84), true)
+    linkPanel.addView(linksHeading)
+    linkPanel.addView(space(10))
+
+    val links = listOf(
+      Pair("Learn With Champak", "https://www.learnwithchampak.live"),
+      Pair("Inside Kashi", "https://insidekashi.com"),
+      Pair("YouTube Channel", "https://youtube.com/@champaksworld")
+    )
+
+    for ((label, url) in links) {
+      val b = linkButton(label, url)
+      linkPanel.addView(b, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(58)))
+      linkPanel.addView(space(10))
+    }
+
+    statusText = text("Use TV remote: Up/Down to focus, OK to open.", 16f, Color.rgb(218, 240, 255), false)
+    statusText.setPadding(0, dp(18), 0, 0)
+    right.addView(statusText)
+
+    scroll.addView(root)
+    setContentView(scroll)
+  }
+
+  private fun linkButton(label: String, url: String): Button {
     return Button(this).apply {
-      text = label
-      textSize = 26f
-      setTextColor(Color.WHITE)
+      text = "$label\n$url"
+      textSize = 15f
       isAllCaps = false
+      gravity = Gravity.CENTER_VERTICAL
+      setPadding(dp(18), 0, dp(18), 0)
+      setTextColor(Color.WHITE)
+      typeface = Typeface.DEFAULT_BOLD
+      background = buttonBg(false)
       isFocusable = true
       isFocusableInTouchMode = true
-      minHeight = 86
-      setPadding(40, 16, 40, 16)
-      background = buttonBackground(false)
 
       setOnFocusChangeListener { view, hasFocus ->
-        view.background = buttonBackground(hasFocus)
-        statusText.text = if (hasFocus) "Focused: $label" else statusText.text
-        Log.d("ChampakTV", "Focus ${if (hasFocus) "entered" else "left"}: $label")
+        background = buttonBg(hasFocus)
+        view.animate().scaleX(if (hasFocus) 1.045f else 1f).scaleY(if (hasFocus) 1.045f else 1f).setDuration(120).start()
+        if (hasFocus) {
+          statusText.text = "Focused: $label"
+          Log.d(tag, "Focused: $label")
+        }
       }
 
       setOnClickListener {
-        onClick()
+        statusText.text = "Opening: $label"
+        openUrl(url)
       }
     }
   }
 
-  private fun buttonLayoutParams(): LinearLayout.LayoutParams {
-    return LinearLayout.LayoutParams(420, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-      topMargin = 18
-      bottomMargin = 18
+  private fun openUrl(url: String) {
+    try {
+      val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+      startActivity(intent)
+    } catch (ex: Exception) {
+      Toast.makeText(this, "No browser found for this link", Toast.LENGTH_LONG).show()
+      Log.e(tag, "Unable to open URL: $url", ex)
     }
   }
 
-  private fun buttonBackground(focused: Boolean): GradientDrawable {
-    return GradientDrawable().apply {
-      shape = GradientDrawable.RECTANGLE
-      cornerRadius = 24f
-      setColor(if (focused) Color.rgb(255, 140, 0) else Color.rgb(95, 45, 20))
-      setStroke(
-        if (focused) 6 else 2,
-        if (focused) Color.WHITE else Color.rgb(180, 120, 70)
-      )
+  private fun loadPhotoInto(imageView: ImageView) {
+    try {
+      val input = assets.open("champak_photo.b64")
+      val encoded = BufferedReader(InputStreamReader(input)).readText().replace("\n", "").trim()
+      val bytes = Base64.decode(encoded, Base64.DEFAULT)
+      val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+      imageView.setImageBitmap(bitmap)
+    } catch (ex: Exception) {
+      Log.e(tag, "Could not load bundled photo", ex)
+      imageView.setBackgroundColor(Color.rgb(12, 84, 130))
+      imageView.contentDescription = "Champak Roy photo"
     }
   }
 
   override fun dispatchKeyEvent(event: KeyEvent): Boolean {
     if (event.action == KeyEvent.ACTION_DOWN) {
       val keyName = when (event.keyCode) {
-        KeyEvent.KEYCODE_DPAD_UP -> "UP"
-        KeyEvent.KEYCODE_DPAD_DOWN -> "DOWN"
-        KeyEvent.KEYCODE_DPAD_LEFT -> "LEFT"
-        KeyEvent.KEYCODE_DPAD_RIGHT -> "RIGHT"
-        KeyEvent.KEYCODE_DPAD_CENTER,
-        KeyEvent.KEYCODE_ENTER,
-        KeyEvent.KEYCODE_NUMPAD_ENTER -> "OK"
-        KeyEvent.KEYCODE_BACK -> "BACK"
-        else -> null
+        KeyEvent.KEYCODE_DPAD_UP -> "up"
+        KeyEvent.KEYCODE_DPAD_DOWN -> "down"
+        KeyEvent.KEYCODE_DPAD_LEFT -> "left"
+        KeyEvent.KEYCODE_DPAD_RIGHT -> "right"
+        KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> "select"
+        KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE -> "back"
+        else -> "keyCode ${event.keyCode}"
       }
-
-      if (keyName != null) {
-        statusText.text = "Key pressed: $keyName"
-        Log.d("ChampakTV", "Key pressed: $keyName")
+      Log.d(tag, "Remote key: $keyName")
+      if (::statusText.isInitialized && keyName != "back") {
+        statusText.text = "Remote key: $keyName"
       }
     }
-
     return super.dispatchKeyEvent(event)
   }
+
+  private fun text(value: String, size: Float, color: Int, bold: Boolean): TextView {
+    return TextView(this).apply {
+      text = value
+      textSize = size
+      setTextColor(color)
+      includeFontPadding = true
+      if (bold) typeface = Typeface.DEFAULT_BOLD
+    }
+  }
+
+  private fun space(h: Int): Space {
+    return Space(this).apply {
+      layoutParams = LinearLayout.LayoutParams(1, dp(h))
+    }
+  }
+
+  private fun rounded(color: Int, radius: Int, strokeColor: Int, strokeWidth: Int): GradientDrawable {
+    return GradientDrawable().apply {
+      setColor(color)
+      cornerRadius = radius.toFloat()
+      if (strokeWidth > 0) setStroke(strokeWidth, strokeColor)
+    }
+  }
+
+  private fun buttonBg(focused: Boolean): GradientDrawable {
+    val colors = if (focused) {
+      intArrayOf(Color.rgb(255, 168, 37), Color.rgb(255, 111, 0))
+    } else {
+      intArrayOf(Color.rgb(9, 74, 132), Color.rgb(5, 43, 92))
+    }
+    return GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, colors).apply {
+      cornerRadius = dp(18).toFloat()
+      setStroke(dp(if (focused) 4 else 2), if (focused) Color.WHITE else Color.rgb(82, 204, 255))
+    }
+  }
+
+  private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 }
