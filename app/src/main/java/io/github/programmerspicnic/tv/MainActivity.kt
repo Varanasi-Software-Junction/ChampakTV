@@ -147,7 +147,7 @@ class MainActivity : AppCompatActivity() {
         view.animate().scaleX(if (hasFocus) 1.045f else 1f).scaleY(if (hasFocus) 1.045f else 1f).setDuration(120).start()
         if (hasFocus) {
           statusText.text = "Focused: $label"
-          Log.d(tag, "Focused: $label")
+          Log.d(this@MainActivity.tag, "Focused: $label")
         }
       }
 
