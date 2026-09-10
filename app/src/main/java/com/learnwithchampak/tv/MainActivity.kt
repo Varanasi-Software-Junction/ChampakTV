@@ -3,6 +3,7 @@ package com.learnwithchampak.tv
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.Rect
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
@@ -15,6 +16,7 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -34,9 +36,14 @@ class MainActivity : AppCompatActivity() {
   private lateinit var statusText: TextView
   private lateinit var clockText: TextView
   private lateinit var root: LinearLayout
+  private lateinit var stage: FrameLayout
+  private lateinit var pointer: TextView
+  private val linkButtons = mutableListOf<Button>()
   private val tag = "ChampakTV"
   private val clockHandler = Handler(Looper.getMainLooper())
   private val clockFormat = SimpleDateFormat("EEE, dd MMM yyyy • hh:mm:ss a", Locale.getDefault())
+  private var pointerX = 0f
+  private var pointerY = 0f
 
   private val clockRunnable = object : Runnable {
     override fun run() {
@@ -64,6 +71,12 @@ class MainActivity : AppCompatActivity() {
   }
 
   private fun buildScreen() {
+    stage = FrameLayout(this).apply {
+      setBackgroundColor(Color.rgb(4, 15, 32))
+      isFocusable = true
+      isFocusableInTouchMode = true
+    }
+
     val scroll = ScrollView(this).apply {
       isFocusable = false
       setBackgroundColor(Color.rgb(4, 15, 32))
@@ -102,6 +115,11 @@ class MainActivity : AppCompatActivity() {
     val role = text("AI • ML • Python • DSA • Programming", 17f, Color.rgb(202, 232, 255), false)
     role.gravity = Gravity.CENTER
     left.addView(role)
+
+    val pointerHelp = text("Pointer mode: arrow keys move, OK clicks", 15f, Color.rgb(255, 221, 128), true)
+    pointerHelp.gravity = Gravity.CENTER
+    pointerHelp.setPadding(0, dp(12), 0, 0)
+    left.addView(pointerHelp)
 
     val right = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
@@ -154,16 +172,38 @@ class MainActivity : AppCompatActivity() {
 
     for ((label, url) in links) {
       val b = linkButton(label, url)
+      linkButtons.add(b)
       linkPanel.addView(b, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(58)))
       linkPanel.addView(space(10))
     }
 
-    statusText = text("Use TV remote: Up/Down to focus, OK to open inside Champak TV browser.", 16f, Color.rgb(218, 240, 255), false)
+    statusText = text("Use TV remote arrows to move the pointer. Press OK to click.", 16f, Color.rgb(218, 240, 255), false)
     statusText.setPadding(0, dp(18), 0, 0)
     right.addView(statusText)
 
     scroll.addView(root)
-    setContentView(scroll)
+    stage.addView(scroll, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+
+    pointer = TextView(this).apply {
+      text = "➤"
+      textSize = 38f
+      setTextColor(Color.rgb(255, 221, 128))
+      setShadowLayer(10f, 0f, 0f, Color.BLACK)
+      typeface = Typeface.DEFAULT_BOLD
+      gravity = Gravity.CENTER
+      elevation = dp(20).toFloat()
+    }
+    stage.addView(pointer, FrameLayout.LayoutParams(dp(56), dp(56)))
+
+    setContentView(stage)
+
+    stage.post {
+      pointerX = stage.width * 0.64f
+      pointerY = stage.height * 0.60f
+      updatePointerPosition()
+      focusButtonUnderPointer()
+      stage.requestFocus()
+    }
   }
 
   private fun linkButton(label: String, url: String): Button {
@@ -260,21 +300,85 @@ class MainActivity : AppCompatActivity() {
 
   override fun dispatchKeyEvent(event: KeyEvent): Boolean {
     if (event.action == KeyEvent.ACTION_DOWN) {
-      val keyName = when (event.keyCode) {
-        KeyEvent.KEYCODE_DPAD_UP -> "up"
-        KeyEvent.KEYCODE_DPAD_DOWN -> "down"
-        KeyEvent.KEYCODE_DPAD_LEFT -> "left"
-        KeyEvent.KEYCODE_DPAD_RIGHT -> "right"
-        KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> "select"
-        KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE -> "back"
-        else -> "keyCode ${event.keyCode}"
-      }
-      Log.d(tag, "Remote key: $keyName")
-      if (::statusText.isInitialized && keyName != "back") {
-        statusText.text = "Remote key: $keyName"
+      return when (event.keyCode) {
+        KeyEvent.KEYCODE_DPAD_UP -> {
+          movePointer(0, -1)
+          true
+        }
+        KeyEvent.KEYCODE_DPAD_DOWN -> {
+          movePointer(0, 1)
+          true
+        }
+        KeyEvent.KEYCODE_DPAD_LEFT -> {
+          movePointer(-1, 0)
+          true
+        }
+        KeyEvent.KEYCODE_DPAD_RIGHT -> {
+          movePointer(1, 0)
+          true
+        }
+        KeyEvent.KEYCODE_DPAD_CENTER,
+        KeyEvent.KEYCODE_ENTER,
+        KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+          clickButtonUnderPointer()
+          true
+        }
+        else -> super.dispatchKeyEvent(event)
       }
     }
     return super.dispatchKeyEvent(event)
+  }
+
+  private fun movePointer(dx: Int, dy: Int) {
+    val step = dp(54).toFloat()
+    pointerX = (pointerX + dx * step).coerceIn(0f, (stage.width - pointer.width).toFloat())
+    pointerY = (pointerY + dy * step).coerceIn(0f, (stage.height - pointer.height).toFloat())
+    updatePointerPosition()
+    val target = focusButtonUnderPointer()
+    statusText.text = if (target != null) {
+      "Pointer over: ${target.text.toString().lineSequence().first()}"
+    } else {
+      "Pointer moved: use OK to click a link button"
+    }
+  }
+
+  private fun updatePointerPosition() {
+    pointer.x = pointerX
+    pointer.y = pointerY
+    pointer.bringToFront()
+  }
+
+  private fun focusButtonUnderPointer(): Button? {
+    val button = buttonUnderPointer()
+    if (button != null && !button.hasFocus()) {
+      button.requestFocus()
+    }
+    return button
+  }
+
+  private fun clickButtonUnderPointer() {
+    val button = buttonUnderPointer()
+    if (button != null) {
+      statusText.text = "Pointer clicked: ${button.text.toString().lineSequence().first()}"
+      button.performClick()
+    } else {
+      statusText.text = "Move pointer onto a link button, then press OK"
+      Toast.makeText(this, "No button under pointer", Toast.LENGTH_SHORT).show()
+    }
+  }
+
+  private fun buttonUnderPointer(): Button? {
+    if (!::stage.isInitialized || !::pointer.isInitialized) return null
+    val stageLocation = IntArray(2)
+    stage.getLocationOnScreen(stageLocation)
+    val px = (stageLocation[0] + pointer.x + pointer.width / 2).toInt()
+    val py = (stageLocation[1] + pointer.y + pointer.height / 2).toInt()
+    val rect = Rect()
+    for (button in linkButtons) {
+      button.getGlobalVisibleRect(rect)
+      if (rect.contains(px, py)) return button
+    }
+    return null
   }
 
   private fun text(value: String, size: Float, color: Int, bold: Boolean): TextView {
