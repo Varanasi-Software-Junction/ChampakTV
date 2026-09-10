@@ -18,12 +18,15 @@ jobs:
           distribution: "temurin"
           java-version: "17"
 
-      - name: Bundle latest Champak photo
+      - name: Bundle latest Champak photo and installer icon
         run: |
           set -euo pipefail
           mkdir -p app/src/main/assets
+          mkdir -p app/src/main/res/drawable
           curl -L "https://programmer-s-picnic.github.io/json-images/tv/champak-photo.png" -o app/src/main/assets/champak-photo.png
+          cp app/src/main/assets/champak-photo.png app/src/main/res/drawable/champak_installer_icon.png
           ls -lh app/src/main/assets/champak-photo.png
+          ls -lh app/src/main/res/drawable/champak_installer_icon.png
 
       - name: Download Gradle 8.2
         run: |
