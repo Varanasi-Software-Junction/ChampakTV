@@ -22,6 +22,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import java.net.URL
 
 class MainActivity : AppCompatActivity() {
 
@@ -174,11 +175,23 @@ class MainActivity : AppCompatActivity() {
       val bytes = Base64.decode(encoded, Base64.DEFAULT)
       val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
       imageView.setImageBitmap(bitmap)
+      return
     } catch (ex: Exception) {
-      Log.e(tag, "Could not load bundled photo", ex)
-      imageView.setBackgroundColor(Color.rgb(12, 84, 130))
-      imageView.contentDescription = "Champak Roy photo"
+      Log.d(tag, "Bundled photo not found, trying hosted photo")
     }
+
+    imageView.setBackgroundColor(Color.rgb(12, 84, 130))
+    imageView.contentDescription = "Champak Roy photo"
+
+    Thread {
+      try {
+        val url = URL("https://programmer-s-picnic.github.io/json-images/mee%20-%20Copy.jpg")
+        val bitmap = BitmapFactory.decodeStream(url.openStream())
+        runOnUiThread { imageView.setImageBitmap(bitmap) }
+      } catch (ex: Exception) {
+        Log.e(tag, "Could not load hosted photo", ex)
+      }
+    }.start()
   }
 
   override fun dispatchKeyEvent(event: KeyEvent): Boolean {
