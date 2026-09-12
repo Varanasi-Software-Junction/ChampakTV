@@ -60,6 +60,7 @@ class BrowserActivity : AppCompatActivity() {
 
   private val tag = "ChampakTVBrowser"
   private lateinit var stage: FrameLayout
+  private lateinit var topBar: LinearLayout
   private lateinit var webView: WebView
   private lateinit var pointer: TextView
   private lateinit var titleText: TextView
@@ -75,6 +76,7 @@ class BrowserActivity : AppCompatActivity() {
   private var pointerY = 0f
   private var lastEdgeScrollAt = 0L
   private var toolbarMode = false
+  private var fullScreenMode = false
   private var okLongPressRunnable: Runnable? = null
   private var okLongPressHandled = false
 
@@ -130,7 +132,7 @@ class BrowserActivity : AppCompatActivity() {
     }
     stage.addView(root, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
 
-    val topBar = LinearLayout(this).apply {
+    topBar = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
       gravity = Gravity.CENTER_VERTICAL
       setPadding(dp(10), dp(8), dp(10), dp(8))
@@ -228,6 +230,7 @@ class BrowserActivity : AppCompatActivity() {
     topBar.addView(helpRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(38)))
     helpRow.addView(toolbarButton("⌨", "Keyboard") { focusAddressBar(true) }, LinearLayout.LayoutParams(0, dp(34), 1f))
     helpRow.addView(toolbarButton("▣", "Focus page") { focusWebPage() }, LinearLayout.LayoutParams(0, dp(34), 1f))
+    helpRow.addView(toolbarButton("⛶", "Full screen") { setFullScreenMode(true) }, LinearLayout.LayoutParams(0, dp(34), 1f))
 
     val titleClockBox = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
@@ -268,7 +271,7 @@ class BrowserActivity : AppCompatActivity() {
     root.addView(webView, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
 
     statusText = TextView(this).apply {
-      text = "Long-press OK for browser menu. Search key returns to buttons."
+      text = "Long-press OK for browser menu. Use full screen for page-only view."
       textSize = if (phoneMode) 12f else 14f
       setTextColor(Color.rgb(218, 240, 255))
       gravity = Gravity.CENTER_VERTICAL
@@ -349,7 +352,7 @@ class BrowserActivity : AppCompatActivity() {
         titleText.text = if (url == "about:blank") "Blank Browser" else title
         if (url == "about:blank") addressBar.setText("") else addressBar.setText(url)
         if (url != "about:blank") addHistory(title, url)
-        showStatus("Desktop page mode. Pointer is synced. Long-press OK for menu.")
+        showStatus("Desktop page mode. Pointer is synced. Full screen available.")
         progress.progress = 0
       }
 
@@ -395,6 +398,7 @@ class BrowserActivity : AppCompatActivity() {
   }
 
   private fun openBlankPage(showKeyboardAfterOpen: Boolean) {
+    setFullScreenMode(false)
     webView.loadUrl("about:blank")
     titleText.text = "Blank Browser"
     addressBar.setText("")
@@ -421,6 +425,7 @@ class BrowserActivity : AppCompatActivity() {
   }
 
   private fun focusAddressBar(openKeyboard: Boolean) {
+    setFullScreenMode(false)
     toolbarMode = false
     cancelOkLongPress()
     addressBar.isFocusableInTouchMode = true
@@ -451,10 +456,11 @@ class BrowserActivity : AppCompatActivity() {
     pointer.visibility = View.VISIBLE
     pointer.bringToFront()
     syncPointerModelFromView()
-    showStatus("Web page mode. Long-press OK for menu; Search key returns to buttons.")
+    showStatus(if (fullScreenMode) "Full screen web page. Menu or long-press OK shows controls." else "Web page mode. Long-press OK for menu; Search key returns to buttons.")
   }
 
   private fun focusToolbar() {
+    setFullScreenMode(false)
     toolbarMode = true
     cancelOkLongPress()
     hideKeyboard()
@@ -465,7 +471,35 @@ class BrowserActivity : AppCompatActivity() {
     showStatus("Button mode. Use arrows to choose icons. Press Page icon to return to web page.")
   }
 
+  private fun setFullScreenMode(enabled: Boolean) {
+    if (!::topBar.isInitialized || !::progress.isInitialized || !::statusText.isInitialized) return
+    fullScreenMode = enabled
+    toolbarMode = false
+    topBar.visibility = if (enabled) View.GONE else View.VISIBLE
+    progress.visibility = if (enabled) View.GONE else View.VISIBLE
+    statusText.visibility = if (enabled) View.GONE else View.VISIBLE
+    window.decorView.systemUiVisibility = if (enabled) {
+      View.SYSTEM_UI_FLAG_FULLSCREEN or
+        View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+        View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+        View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+        View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+        View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+    } else {
+      View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+    }
+    webView.post {
+      placePointerInWebPage()
+      focusWebPage()
+    }
+  }
+
   private fun goBackOrClose() {
+    if (fullScreenMode) {
+      setFullScreenMode(false)
+      focusToolbar()
+      return
+    }
     if (webView.canGoBack()) webView.goBack() else finish()
   }
 
@@ -626,6 +660,7 @@ class BrowserActivity : AppCompatActivity() {
     cancelOkLongPress()
     hideKeyboard()
     val options = arrayOf(
+      if (fullScreenMode) "Show Controls" else "Full Screen Web Page",
       "Return to Buttons",
       "Open Keyboard",
       "Open Learn With Champak",
@@ -636,10 +671,11 @@ class BrowserActivity : AppCompatActivity() {
       .setTitle("Browser Menu")
       .setItems(options) { dialog, which ->
         when (which) {
-          0 -> focusToolbar()
-          1 -> focusAddressBar(true)
-          2 -> loadAddress(HOME_URL)
-          3 -> finish()
+          0 -> if (fullScreenMode) focusToolbar() else setFullScreenMode(true)
+          1 -> focusToolbar()
+          2 -> focusAddressBar(true)
+          3 -> loadAddress(HOME_URL)
+          4 -> finish()
           else -> dialog.dismiss()
         }
       }
@@ -649,7 +685,7 @@ class BrowserActivity : AppCompatActivity() {
 
   override fun dispatchTouchEvent(event: MotionEvent): Boolean {
     if (::stage.isInitialized && ::pointer.isInitialized) {
-      if (isInsideView(addressBar, event.rawX.toInt(), event.rawY.toInt())) {
+      if (!fullScreenMode && isInsideView(addressBar, event.rawX.toInt(), event.rawY.toInt())) {
         if (event.actionMasked == MotionEvent.ACTION_DOWN || event.actionMasked == MotionEvent.ACTION_UP) focusAddressBar(true)
         return super.dispatchTouchEvent(event)
       }
@@ -717,7 +753,7 @@ class BrowserActivity : AppCompatActivity() {
   private fun movePointer(dx: Int, dy: Int) {
     syncPointerModelFromView()
 
-    if (dy < 0 && pointerAtVeryTopOfWeb()) {
+    if (!fullScreenMode && dy < 0 && pointerAtVeryTopOfWeb()) {
       focusToolbar()
       return
     }
@@ -735,7 +771,7 @@ class BrowserActivity : AppCompatActivity() {
 
   private fun clickAtPointer() {
     syncPointerModelFromView()
-    if (isPointerOverAddressBar()) {
+    if (!fullScreenMode && isPointerOverAddressBar()) {
       focusAddressBar(true)
       return
     }
