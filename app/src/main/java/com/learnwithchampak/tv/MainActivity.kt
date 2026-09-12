@@ -33,6 +33,8 @@ import java.net.URL
 
 class MainActivity : AppCompatActivity() {
 
+  private data class HomeLink(val label: String, val url: String, val external: Boolean)
+
   private lateinit var statusText: TextView
   private lateinit var versionText: TextView
   private lateinit var clockCanvas: ClockCanvasView
@@ -168,18 +170,19 @@ class MainActivity : AppCompatActivity() {
     }
     right.addView(linkPanel, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
 
-    linkPanel.addView(text("Blogs, YouTube & APK", if (phoneMode) 20f else 25f, Color.rgb(3, 44, 84), true))
+    linkPanel.addView(text("Blogs, YouTube, Browser & APK", if (phoneMode) 20f else 25f, Color.rgb(3, 44, 84), true))
     linkPanel.addView(space(10))
 
     val links = listOf(
-      Triple("Learn With Champak", "https://www.learnwithchampak.live", false),
-      Triple("Inside Kashi", "https://insidekashi.com", false),
-      Triple("YouTube Channel", "https://youtube.com/@champaksworld", false),
-      Triple("Download Latest APK", apkUrl, true)
+      HomeLink("Open Blank Browser", "", false),
+      HomeLink("Learn With Champak", "https://www.learnwithchampak.live", false),
+      HomeLink("Inside Kashi", "https://insidekashi.com", false),
+      HomeLink("YouTube Channel", "https://youtube.com/@champaksworld", false),
+      HomeLink("Download Latest APK", apkUrl, true)
     )
 
-    for ((label, url, external) in links) {
-      val button = linkButton(label, url, phoneMode, external)
+    for (link in links) {
+      val button = linkButton(link.label, link.url, phoneMode, link.external)
       linkButtons.add(button)
       linkPanel.addView(button, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(if (phoneMode) 64 else 58)))
       linkPanel.addView(space(10))
@@ -198,7 +201,7 @@ class MainActivity : AppCompatActivity() {
     linkPanel.addView(versionText, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
 
     statusText = text(
-      if (phoneMode) "Touch near top/bottom edge to scroll." else "Use TV remote arrows. Top/bottom edge scrolls the page.",
+      if (phoneMode) "Touch near top/bottom edge to scroll. Blank Browser opens keyboard." else "Use TV remote arrows. Blank Browser opens an empty address bar.",
       if (phoneMode) 14f else 16f,
       Color.rgb(218, 240, 255),
       false
@@ -231,8 +234,9 @@ class MainActivity : AppCompatActivity() {
   }
 
   private fun linkButton(label: String, url: String, phoneMode: Boolean, openExternal: Boolean): Button {
+    val displayUrl = if (url.isBlank()) "Blank address bar + keyboard" else url
     return Button(this).apply {
-      text = "$label\n$url"
+      text = "$label\n$displayUrl"
       textSize = if (phoneMode) 14f else 15f
       isAllCaps = false
       gravity = Gravity.CENTER_VERTICAL
@@ -250,7 +254,11 @@ class MainActivity : AppCompatActivity() {
       }
 
       setOnClickListener {
-        statusText.text = if (openExternal) "Opening APK download link" else "Opening inside app: $label"
+        statusText.text = when {
+          openExternal -> "Opening APK download link"
+          url.isBlank() -> "Opening blank browser with keyboard"
+          else -> "Opening inside app: $label"
+        }
         if (openExternal) openOutside(url) else openInsideApp(label, url)
       }
     }
