@@ -1,17 +1,25 @@
 package com.learnwithchampak.tv
 
+import android.app.AlertDialog
+import android.app.DownloadManager
+import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.pm.ActivityInfo
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.inputmethod.EditorInfo
+import android.webkit.CookieManager
+import android.webkit.URLUtil
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -19,13 +27,16 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import java.net.URLEncoder
 import java.text.SimpleDateFormat
 import java.util.Date
+import java.util.LinkedHashSet
 import java.util.Locale
 
 class BrowserActivity : AppCompatActivity() {
@@ -33,6 +44,9 @@ class BrowserActivity : AppCompatActivity() {
   companion object {
     const val EXTRA_URL = "com.learnwithchampak.tv.EXTRA_URL"
     const val EXTRA_TITLE = "com.learnwithchampak.tv.EXTRA_TITLE"
+    private const val PREFS = "champak_browser_prefs"
+    private const val KEY_BOOKMARKS = "bookmarks"
+    private const val KEY_HISTORY = "history"
   }
 
   private val tag = "ChampakTVBrowser"
@@ -40,7 +54,9 @@ class BrowserActivity : AppCompatActivity() {
   private lateinit var titleText: TextView
   private lateinit var clockText: TextView
   private lateinit var statusText: TextView
+  private lateinit var addressBar: EditText
   private lateinit var progress: ProgressBar
+  private lateinit var prefs: SharedPreferences
   private val clockHandler = Handler(Looper.getMainLooper())
   private val clockFormat = SimpleDateFormat("EEE, dd MMM yyyy • hh:mm:ss a", Locale.getDefault())
 
@@ -53,16 +69,17 @@ class BrowserActivity : AppCompatActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     if (resources.configuration.screenWidthDp >= 700) {
       requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
     }
 
-    val startTitle = intent.getStringExtra(EXTRA_TITLE) ?: "Champak TV Browser"
-    val startUrl = intent.getStringExtra(EXTRA_URL) ?: "https://www.learnwithchampak.live"
+    val startTitle = intent.getStringExtra(EXTRA_TITLE) ?: "Champak Browser"
+    val startUrl = normalizeUrl(intent.getStringExtra(EXTRA_URL) ?: "https://www.learnwithchampak.live")
 
     buildScreen(startTitle)
     setupWebView()
-    webView.loadUrl(startUrl)
+    loadAddress(startUrl)
     clockHandler.post(clockRunnable)
   }
 
@@ -73,9 +90,7 @@ class BrowserActivity : AppCompatActivity() {
   }
 
   private fun updateClock() {
-    if (::clockText.isInitialized) {
-      clockText.text = clockFormat.format(Date())
-    }
+    if (::clockText.isInitialized) clockText.text = clockFormat.format(Date())
   }
 
   private fun buildScreen(startTitle: String) {
@@ -87,7 +102,7 @@ class BrowserActivity : AppCompatActivity() {
     }
 
     val topBar = LinearLayout(this).apply {
-      orientation = if (phoneMode) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+      orientation = LinearLayout.VERTICAL
       gravity = Gravity.CENTER_VERTICAL
       setPadding(dp(10), dp(8), dp(10), dp(8))
       background = GradientDrawable(
@@ -95,38 +110,74 @@ class BrowserActivity : AppCompatActivity() {
         intArrayOf(Color.rgb(2, 31, 69), Color.rgb(6, 85, 145))
       )
     }
-    root.addView(topBar, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(if (phoneMode) 156 else 78)))
+    root.addView(topBar, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(if (phoneMode) 222 else 164)))
 
     val buttonRow = LinearLayout(this).apply {
       orientation = LinearLayout.HORIZONTAL
       gravity = Gravity.CENTER_VERTICAL
     }
-    topBar.addView(buttonRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(54)))
+    topBar.addView(buttonRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(48)))
 
     val backButton = toolbarButton("Back") { goBackOrClose() }
-    val forwardButton = toolbarButton("Forward") {
-      if (webView.canGoForward()) webView.goForward() else showStatus("No forward page")
-    }
+    val forwardButton = toolbarButton("Forward") { if (webView.canGoForward()) webView.goForward() else showStatus("No forward page") }
     val reloadButton = toolbarButton("Reload") { webView.reload() }
     val homeButton = toolbarButton("Home") { finish() }
     val externalButton = toolbarButton(if (phoneMode) "Outside" else "Open Outside") { openOutside() }
 
-    buttonRow.addView(backButton, LinearLayout.LayoutParams(0, dp(50), 1f))
-    buttonRow.addView(forwardButton, LinearLayout.LayoutParams(0, dp(50), 1f))
-    buttonRow.addView(reloadButton, LinearLayout.LayoutParams(0, dp(50), 1f))
-    buttonRow.addView(homeButton, LinearLayout.LayoutParams(0, dp(50), 1f))
-    buttonRow.addView(externalButton, LinearLayout.LayoutParams(0, dp(50), 1.2f))
+    buttonRow.addView(backButton, LinearLayout.LayoutParams(0, dp(44), 1f))
+    buttonRow.addView(forwardButton, LinearLayout.LayoutParams(0, dp(44), 1f))
+    buttonRow.addView(reloadButton, LinearLayout.LayoutParams(0, dp(44), 1f))
+    buttonRow.addView(homeButton, LinearLayout.LayoutParams(0, dp(44), 1f))
+    buttonRow.addView(externalButton, LinearLayout.LayoutParams(0, dp(44), 1.2f))
+
+    val addressRow = LinearLayout(this).apply {
+      orientation = LinearLayout.HORIZONTAL
+      gravity = Gravity.CENTER_VERTICAL
+      setPadding(0, dp(8), 0, 0)
+    }
+    topBar.addView(addressRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(58)))
+
+    addressBar = EditText(this).apply {
+      hint = "Enter website address or search"
+      textSize = if (phoneMode) 14f else 16f
+      singleLine = true
+      setTextColor(Color.rgb(3, 44, 84))
+      setHintTextColor(Color.rgb(80, 105, 125))
+      setPadding(dp(12), 0, dp(12), 0)
+      background = solid(Color.WHITE, dp(12))
+      imeOptions = EditorInfo.IME_ACTION_GO
+      setOnEditorActionListener { _, actionId, event ->
+        if (actionId == EditorInfo.IME_ACTION_GO || event?.keyCode == KeyEvent.KEYCODE_ENTER) {
+          loadAddress(addressBar.text.toString())
+          true
+        } else false
+      }
+    }
+    addressRow.addView(addressBar, LinearLayout.LayoutParams(0, dp(48), 1f))
+    addressRow.addView(toolbarButton("Go") { loadAddress(addressBar.text.toString()) }, LinearLayout.LayoutParams(dp(if (phoneMode) 62 else 82), dp(48)))
+
+    val browserRow = LinearLayout(this).apply {
+      orientation = LinearLayout.HORIZONTAL
+      gravity = Gravity.CENTER_VERTICAL
+      setPadding(0, dp(8), 0, 0)
+    }
+    topBar.addView(browserRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(52)))
+
+    browserRow.addView(toolbarButton("Bookmark") { addBookmark() }, LinearLayout.LayoutParams(0, dp(46), 1.25f))
+    browserRow.addView(toolbarButton("Bookmarks") { showBookmarks() }, LinearLayout.LayoutParams(0, dp(46), 1.25f))
+    browserRow.addView(toolbarButton("History") { showHistory() }, LinearLayout.LayoutParams(0, dp(46), 1f))
+    browserRow.addView(toolbarButton("Downloads") { openDownloads() }, LinearLayout.LayoutParams(0, dp(46), 1.15f))
 
     val titleClockBox = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
       gravity = Gravity.CENTER_VERTICAL or Gravity.RIGHT
-      setPadding(0, dp(8), 0, 0)
+      setPadding(0, dp(6), 0, 0)
     }
     topBar.addView(titleClockBox, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
 
     titleText = TextView(this).apply {
       text = startTitle
-      textSize = if (phoneMode) 15f else 19f
+      textSize = if (phoneMode) 14f else 18f
       setTextColor(Color.WHITE)
       typeface = Typeface.DEFAULT_BOLD
       gravity = Gravity.RIGHT
@@ -135,7 +186,7 @@ class BrowserActivity : AppCompatActivity() {
     titleClockBox.addView(titleText)
 
     clockText = TextView(this).apply {
-      textSize = if (phoneMode) 13f else 16f
+      textSize = if (phoneMode) 12f else 15f
       setTextColor(Color.rgb(255, 221, 128))
       gravity = Gravity.RIGHT
       maxLines = 1
@@ -156,7 +207,7 @@ class BrowserActivity : AppCompatActivity() {
     root.addView(webView, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
 
     statusText = TextView(this).apply {
-      text = if (phoneMode) "Touch page to use it. Buttons are at top." else "Browser controls: Back, Forward, Reload, Home, Open Outside. Use Up/Down to scroll page."
+      text = "Browser ready: address bar, bookmarks, history and downloads enabled."
       textSize = if (phoneMode) 12f else 14f
       setTextColor(Color.rgb(218, 240, 255))
       gravity = Gravity.CENTER_VERTICAL
@@ -166,7 +217,7 @@ class BrowserActivity : AppCompatActivity() {
     root.addView(statusText, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(38)))
 
     setContentView(root)
-    if (!phoneMode) backButton.requestFocus()
+    if (!phoneMode) addressBar.requestFocus()
   }
 
   private fun setupWebView() {
@@ -183,16 +234,40 @@ class BrowserActivity : AppCompatActivity() {
       displayZoomControls = false
       cacheMode = WebSettings.LOAD_DEFAULT
       mediaPlaybackRequiresUserGesture = false
+      allowFileAccess = true
+      allowContentAccess = true
+    }
+
+    webView.setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
+      startDownload(url, userAgent, contentDisposition, mimeType)
     }
 
     webView.webViewClient = object : WebViewClient() {
       override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-        view.loadUrl(request.url.toString())
+        val target = request.url.toString()
+        if (target.startsWith("tel:") || target.startsWith("mailto:") || target.startsWith("whatsapp:")) {
+          openExternalUrl(target)
+          return true
+        }
+        view.loadUrl(target)
+        return true
+      }
+
+      @Suppress("DEPRECATION")
+      override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
+        if (url.startsWith("tel:") || url.startsWith("mailto:") || url.startsWith("whatsapp:")) {
+          openExternalUrl(url)
+          return true
+        }
+        view.loadUrl(url)
         return true
       }
 
       override fun onPageFinished(view: WebView, url: String) {
-        titleText.text = view.title ?: url
+        val title = view.title ?: url
+        titleText.text = title
+        addressBar.setText(url)
+        addHistory(title, url)
         showStatus(url)
         progress.progress = 0
       }
@@ -217,14 +292,14 @@ class BrowserActivity : AppCompatActivity() {
   private fun toolbarButton(label: String, action: () -> Unit): Button {
     return Button(this).apply {
       text = label
-      textSize = 12f
+      textSize = 11.5f
       isAllCaps = false
       setTextColor(Color.WHITE)
       typeface = Typeface.DEFAULT_BOLD
       background = buttonBg(false)
       isFocusable = true
       isFocusableInTouchMode = true
-      setPadding(dp(4), 0, dp(4), 0)
+      setPadding(dp(3), 0, dp(3), 0)
 
       setOnFocusChangeListener { view, hasFocus ->
         background = buttonBg(hasFocus)
@@ -235,18 +310,137 @@ class BrowserActivity : AppCompatActivity() {
     }
   }
 
+  private fun loadAddress(input: String) {
+    val target = normalizeUrl(input)
+    addressBar.setText(target)
+    showStatus("Opening: $target")
+    webView.loadUrl(target)
+  }
+
+  private fun normalizeUrl(input: String): String {
+    val value = input.trim()
+    if (value.isEmpty()) return "https://www.learnwithchampak.live"
+    if (value.startsWith("http://") || value.startsWith("https://")) return value
+    if (value.startsWith("www.") || (value.contains(".") && !value.contains(" "))) return "https://$value"
+    val query = URLEncoder.encode(value, "UTF-8")
+    return "https://www.google.com/search?q=$query"
+  }
+
   private fun goBackOrClose() {
     if (webView.canGoBack()) webView.goBack() else finish()
   }
 
   private fun openOutside() {
     val url = webView.url ?: return
+    openExternalUrl(url)
+  }
+
+  private fun openExternalUrl(url: String) {
     try {
       startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
     } catch (ex: Exception) {
-      Toast.makeText(this, "No external browser found", Toast.LENGTH_LONG).show()
-      Log.e(tag, "Could not open outside: $url", ex)
+      Toast.makeText(this, "No app found for this link", Toast.LENGTH_LONG).show()
+      Log.e(tag, "Could not open external URL: $url", ex)
     }
+  }
+
+  private fun startDownload(url: String, userAgent: String, contentDisposition: String, mimeType: String) {
+    try {
+      val fileName = URLUtil.guessFileName(url, contentDisposition, mimeType)
+      val request = DownloadManager.Request(Uri.parse(url)).apply {
+        setMimeType(mimeType)
+        addRequestHeader("User-Agent", userAgent)
+        val cookies = CookieManager.getInstance().getCookie(url)
+        if (!cookies.isNullOrBlank()) addRequestHeader("Cookie", cookies)
+        setTitle(fileName)
+        setDescription("Downloading from Champak Browser")
+        setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+        setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+        allowScanningByMediaScanner()
+      }
+      val dm = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+      dm.enqueue(request)
+      showStatus("Downloading: $fileName")
+      Toast.makeText(this, "Download started: $fileName", Toast.LENGTH_LONG).show()
+    } catch (ex: Exception) {
+      Toast.makeText(this, "Download failed. Opening outside instead.", Toast.LENGTH_LONG).show()
+      Log.e(tag, "Download failed: $url", ex)
+      openExternalUrl(url)
+    }
+  }
+
+  private fun openDownloads() {
+    try {
+      startActivity(Intent(DownloadManager.ACTION_VIEW_DOWNLOADS))
+    } catch (ex: Exception) {
+      Toast.makeText(this, "Downloads app not found", Toast.LENGTH_LONG).show()
+      Log.e(tag, "Could not open downloads", ex)
+    }
+  }
+
+  private fun addBookmark() {
+    val url = webView.url ?: addressBar.text.toString()
+    val title = titleText.text.toString().ifBlank { url }
+    val item = "$title|$url"
+    val items = loadItems(KEY_BOOKMARKS)
+    items.remove(item)
+    items.add(0, item)
+    saveItems(KEY_BOOKMARKS, items.take(80))
+    showStatus("Bookmarked: $title")
+    Toast.makeText(this, "Bookmark saved", Toast.LENGTH_SHORT).show()
+  }
+
+  private fun addHistory(title: String, url: String) {
+    if (url.isBlank()) return
+    val item = "${title.ifBlank { url }}|$url"
+    val deduped = LinkedHashSet<String>()
+    deduped.add(item)
+    for (old in loadItems(KEY_HISTORY)) {
+      if (!old.endsWith("|$url")) deduped.add(old)
+    }
+    saveItems(KEY_HISTORY, deduped.take(120))
+  }
+
+  private fun showBookmarks() {
+    showSavedList("Bookmarks", KEY_BOOKMARKS, "No bookmarks yet")
+  }
+
+  private fun showHistory() {
+    showSavedList("History", KEY_HISTORY, "No history yet")
+  }
+
+  private fun showSavedList(title: String, key: String, emptyMessage: String) {
+    val items = loadItems(key)
+    if (items.isEmpty()) {
+      Toast.makeText(this, emptyMessage, Toast.LENGTH_LONG).show()
+      return
+    }
+    val labels = items.map { it.substringBefore("|") }.toTypedArray()
+    AlertDialog.Builder(this)
+      .setTitle(title)
+      .setItems(labels) { _, which ->
+        val url = items[which].substringAfter("|", items[which])
+        loadAddress(url)
+      }
+      .setNegativeButton("Close", null)
+      .setNeutralButton("Clear") { _, _ ->
+        prefs.edit().remove(key).apply()
+        Toast.makeText(this, "$title cleared", Toast.LENGTH_SHORT).show()
+      }
+      .show()
+  }
+
+  private fun loadItems(key: String): MutableList<String> {
+    return prefs.getString(key, "")
+      .orEmpty()
+      .lines()
+      .map { it.trim() }
+      .filter { it.contains("|") }
+      .toMutableList()
+  }
+
+  private fun saveItems(key: String, items: List<String>) {
+    prefs.edit().putString(key, items.joinToString("\n")).apply()
   }
 
   private fun showStatus(message: String) {
@@ -274,7 +468,7 @@ class BrowserActivity : AppCompatActivity() {
             return true
           }
         }
-        KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MENU -> {
+        KeyEvent.KEYCODE_MENU -> {
           webView.requestFocus()
           showStatus("Page area focused. Use Up/Down to scroll.")
           return true
@@ -285,7 +479,11 @@ class BrowserActivity : AppCompatActivity() {
   }
 
   private fun buttonBg(focused: Boolean): GradientDrawable {
-    val colors = if (focused) intArrayOf(Color.rgb(255, 168, 37), Color.rgb(255, 111, 0)) else intArrayOf(Color.rgb(8, 77, 138), Color.rgb(4, 45, 98))
+    val colors = if (focused) {
+      intArrayOf(Color.rgb(255, 168, 37), Color.rgb(255, 111, 0))
+    } else {
+      intArrayOf(Color.rgb(8, 77, 138), Color.rgb(4, 45, 98))
+    }
     return GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, colors).apply {
       cornerRadius = dp(14).toFloat()
       setStroke(dp(if (focused) 3 else 1), if (focused) Color.WHITE else Color.rgb(82, 204, 255))
