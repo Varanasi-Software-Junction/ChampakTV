@@ -7,6 +7,8 @@ import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -24,6 +26,7 @@ import android.widget.Space
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.URL
@@ -31,6 +34,7 @@ import java.net.URL
 class MainActivity : AppCompatActivity() {
 
   private lateinit var statusText: TextView
+  private lateinit var versionText: TextView
   private lateinit var clockCanvas: ClockCanvasView
   private lateinit var stage: FrameLayout
   private lateinit var pointer: TextView
@@ -39,6 +43,9 @@ class MainActivity : AppCompatActivity() {
   private val clockHandler = Handler(Looper.getMainLooper())
   private var pointerX = 0f
   private var pointerY = 0f
+
+  private val apkUrl = "https://programmer-s-picnic.github.io/json-images/tv/champak-tv.apk"
+  private val versionUrl = "https://programmer-s-picnic.github.io/json-images/tv/champak-tv-version.json"
 
   private val clockRunnable = object : Runnable {
     override fun run() {
@@ -54,6 +61,7 @@ class MainActivity : AppCompatActivity() {
     }
     buildScreen()
     clockHandler.post(clockRunnable)
+    checkLatestVersion()
   }
 
   override fun onDestroy() {
@@ -78,7 +86,12 @@ class MainActivity : AppCompatActivity() {
     val root = LinearLayout(this).apply {
       orientation = if (phoneMode) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
       gravity = Gravity.CENTER_VERTICAL
-      setPadding(dp(if (phoneMode) 18 else 44), dp(if (phoneMode) 18 else 28), dp(if (phoneMode) 18 else 44), dp(if (phoneMode) 18 else 28))
+      setPadding(
+        dp(if (phoneMode) 18 else 44),
+        dp(if (phoneMode) 18 else 28),
+        dp(if (phoneMode) 18 else 44),
+        dp(if (phoneMode) 18 else 28)
+      )
       background = GradientDrawable(
         GradientDrawable.Orientation.TL_BR,
         intArrayOf(Color.rgb(3, 19, 46), Color.rgb(8, 74, 128), Color.rgb(2, 13, 28))
@@ -131,7 +144,10 @@ class MainActivity : AppCompatActivity() {
     )
 
     clockCanvas = ClockCanvasView(this)
-    right.addView(clockCanvas, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(if (phoneMode) 110 else 150)).apply { bottomMargin = dp(10) })
+    right.addView(
+      clockCanvas,
+      LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(if (phoneMode) 110 else 150)).apply { bottomMargin = dp(10) }
+    )
 
     right.addView(text("Installed as: Learn With Champak TV", if (phoneMode) 14f else 16f, Color.rgb(255, 221, 128), true))
     right.addView(text("Learn With", if (phoneMode) 34f else 46f, Color.WHITE, true))
@@ -151,21 +167,34 @@ class MainActivity : AppCompatActivity() {
     }
     right.addView(linkPanel, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
 
-    linkPanel.addView(text("Blogs & Learning Links", if (phoneMode) 20f else 25f, Color.rgb(3, 44, 84), true))
+    linkPanel.addView(text("Blogs, YouTube & APK", if (phoneMode) 20f else 25f, Color.rgb(3, 44, 84), true))
     linkPanel.addView(space(10))
 
     val links = listOf(
-      Pair("Learn With Champak", "https://www.learnwithchampak.live"),
-      Pair("Inside Kashi", "https://insidekashi.com"),
-      Pair("YouTube Channel", "https://youtube.com/@champaksworld")
+      Triple("Learn With Champak", "https://www.learnwithchampak.live", false),
+      Triple("Inside Kashi", "https://insidekashi.com", false),
+      Triple("YouTube Channel", "https://youtube.com/@champaksworld", false),
+      Triple("Download Latest APK", apkUrl, true)
     )
 
-    for ((label, url) in links) {
-      val button = linkButton(label, url, phoneMode)
+    for ((label, url, external) in links) {
+      val button = linkButton(label, url, phoneMode, external)
       linkButtons.add(button)
       linkPanel.addView(button, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(if (phoneMode) 64 else 58)))
       linkPanel.addView(space(10))
     }
+
+    val installedInfo = getInstalledVersionLabel()
+    versionText = text(
+      "Installed: $installedInfo\nLatest public APK: checking...\nAPK link: $apkUrl",
+      if (phoneMode) 13f else 15f,
+      Color.rgb(3, 44, 84),
+      true
+    ).apply {
+      setPadding(dp(10), dp(8), dp(10), dp(8))
+      background = rounded(Color.rgb(232, 247, 255), dp(14), Color.rgb(82, 204, 255), dp(1))
+    }
+    linkPanel.addView(versionText, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
 
     statusText = text(
       if (phoneMode) "Touch to move pointer. Tap a button to open." else "Use TV remote arrows to move the pointer. Press OK to click.",
@@ -200,7 +229,7 @@ class MainActivity : AppCompatActivity() {
     }
   }
 
-  private fun linkButton(label: String, url: String, phoneMode: Boolean): Button {
+  private fun linkButton(label: String, url: String, phoneMode: Boolean, openExternal: Boolean): Button {
     return Button(this).apply {
       text = "$label\n$url"
       textSize = if (phoneMode) 14f else 15f
@@ -220,10 +249,54 @@ class MainActivity : AppCompatActivity() {
       }
 
       setOnClickListener {
-        statusText.text = "Opening inside app: $label"
-        openInsideApp(label, url)
+        statusText.text = if (openExternal) "Opening APK download link" else "Opening inside app: $label"
+        if (openExternal) openOutside(url) else openInsideApp(label, url)
       }
     }
+  }
+
+  private fun getInstalledVersionCode(): Long {
+    val info = packageManager.getPackageInfo(packageName, 0)
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode else info.versionCode.toLong()
+  }
+
+  private fun getInstalledVersionLabel(): String {
+    val info = packageManager.getPackageInfo(packageName, 0)
+    val name = info.versionName ?: "unknown"
+    val code = getInstalledVersionCode()
+    return "v$name ($code)"
+  }
+
+  private fun checkLatestVersion() {
+    Thread {
+      try {
+        val json = URL(versionUrl).readText()
+        val data = JSONObject(json)
+        val latestName = data.optString("versionName", "unknown")
+        val latestCode = data.optLong("versionCode", -1)
+        val latestApk = data.optString("apkUrl", apkUrl)
+        val installedCode = getInstalledVersionCode()
+        val message = when {
+          latestCode > installedCode -> "Update available"
+          latestCode == installedCode -> "Up to date"
+          latestCode > 0 && latestCode < installedCode -> "Installed build is newer than public APK"
+          else -> "Could not compare version"
+        }
+        runOnUiThread {
+          if (::versionText.isInitialized) {
+            versionText.text = "Installed: ${getInstalledVersionLabel()}\nLatest public APK: v$latestName ($latestCode)\nStatus: $message\nAPK link: $latestApk"
+          }
+          if (::statusText.isInitialized) statusText.text = message
+        }
+      } catch (ex: Exception) {
+        runOnUiThread {
+          if (::versionText.isInitialized) {
+            versionText.text = "Installed: ${getInstalledVersionLabel()}\nLatest public APK: unable to check now\nAPK link: $apkUrl"
+          }
+        }
+        Log.e(tag, "Version check failed", ex)
+      }
+    }.start()
   }
 
   private fun openInsideApp(title: String, url: String) {
@@ -235,6 +308,15 @@ class MainActivity : AppCompatActivity() {
     } catch (ex: Exception) {
       Toast.makeText(this, "Could not open browser screen", Toast.LENGTH_LONG).show()
       Log.e(tag, "Unable to open internal browser: $url", ex)
+    }
+  }
+
+  private fun openOutside(url: String) {
+    try {
+      startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+    } catch (ex: Exception) {
+      Toast.makeText(this, "No browser/downloader found", Toast.LENGTH_LONG).show()
+      Log.e(tag, "Unable to open external URL: $url", ex)
     }
   }
 
