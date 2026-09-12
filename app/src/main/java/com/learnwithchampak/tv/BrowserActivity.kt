@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.ActivityInfo
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.Typeface
@@ -16,6 +17,7 @@ import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.util.Base64
 import android.util.Log
 import android.view.Gravity
 import android.view.KeyEvent
@@ -33,11 +35,15 @@ import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.net.URL
 import java.net.URLEncoder
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -55,6 +61,7 @@ class BrowserActivity : AppCompatActivity() {
   }
 
   private val tag = "ChampakTVBrowser"
+  private val homeUrl = "https://www.learnwithchampak.live"
   private lateinit var stage: FrameLayout
   private lateinit var webView: WebView
   private lateinit var pointer: TextView
@@ -138,11 +145,28 @@ class BrowserActivity : AppCompatActivity() {
     }
     topBar.addView(buttonRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(48)))
 
-    buttonRow.addView(toolbarButton("Back") { goBackOrClose() }, LinearLayout.LayoutParams(0, dp(44), 1f))
-    buttonRow.addView(toolbarButton("Forward") { if (webView.canGoForward()) webView.goForward() else showStatus("No forward page") }, LinearLayout.LayoutParams(0, dp(44), 1f))
-    buttonRow.addView(toolbarButton("Reload") { webView.reload() }, LinearLayout.LayoutParams(0, dp(44), 1f))
-    buttonRow.addView(toolbarButton("Home") { finish() }, LinearLayout.LayoutParams(0, dp(44), 1f))
-    buttonRow.addView(toolbarButton(if (phoneMode) "Outside" else "Open Outside") { openOutside() }, LinearLayout.LayoutParams(0, dp(44), 1.2f))
+    val brandIcon = ImageView(this).apply {
+      contentDescription = "Learn With Champak"
+      scaleType = ImageView.ScaleType.CENTER_CROP
+      background = rounded(Color.WHITE, dp(12), Color.rgb(255, 221, 128), dp(2))
+      setPadding(dp(3), dp(3), dp(3), dp(3))
+      elevation = dp(8).toFloat()
+      isClickable = true
+      isFocusable = true
+      isFocusableInTouchMode = true
+      loadBrandIconInto(this)
+      setOnClickListener { loadAddress(homeUrl) }
+      setOnFocusChangeListener { view, hasFocus ->
+        view.animate().scaleX(if (hasFocus) 1.08f else 1f).scaleY(if (hasFocus) 1.08f else 1f).setDuration(100).start()
+      }
+    }
+    buttonRow.addView(brandIcon, LinearLayout.LayoutParams(dp(46), dp(44)).apply { rightMargin = dp(6) })
+
+    buttonRow.addView(toolbarButton("←", "Back") { goBackOrClose() }, LinearLayout.LayoutParams(0, dp(44), 1f))
+    buttonRow.addView(toolbarButton("→", "Forward") { if (webView.canGoForward()) webView.goForward() else showStatus("No forward page") }, LinearLayout.LayoutParams(0, dp(44), 1f))
+    buttonRow.addView(toolbarButton("↻", "Reload") { webView.reload() }, LinearLayout.LayoutParams(0, dp(44), 1f))
+    buttonRow.addView(toolbarButton("⌂", "Home") { finish() }, LinearLayout.LayoutParams(0, dp(44), 1f))
+    buttonRow.addView(toolbarButton("↗", "Open outside") { openOutside() }, LinearLayout.LayoutParams(0, dp(44), 1f))
 
     val addressRow = LinearLayout(this).apply {
       orientation = LinearLayout.HORIZONTAL
@@ -180,7 +204,7 @@ class BrowserActivity : AppCompatActivity() {
       }
     }
     addressRow.addView(addressBar, LinearLayout.LayoutParams(0, dp(48), 1f))
-    addressRow.addView(toolbarButton("Go") { loadAddress(addressBar.text.toString()) }, LinearLayout.LayoutParams(dp(if (phoneMode) 62 else 82), dp(48)))
+    addressRow.addView(toolbarButton("▶", "Go") { loadAddress(addressBar.text.toString()) }, LinearLayout.LayoutParams(dp(if (phoneMode) 58 else 70), dp(48)))
 
     val browserRow = LinearLayout(this).apply {
       orientation = LinearLayout.HORIZONTAL
@@ -189,11 +213,11 @@ class BrowserActivity : AppCompatActivity() {
     }
     topBar.addView(browserRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(52)))
 
-    browserRow.addView(toolbarButton("Blank") { openBlankPage(true) }, LinearLayout.LayoutParams(0, dp(46), 0.9f))
-    browserRow.addView(toolbarButton("Bookmark") { addBookmark() }, LinearLayout.LayoutParams(0, dp(46), 1.25f))
-    browserRow.addView(toolbarButton("Bookmarks") { showBookmarks() }, LinearLayout.LayoutParams(0, dp(46), 1.25f))
-    browserRow.addView(toolbarButton("History") { showHistory() }, LinearLayout.LayoutParams(0, dp(46), 1f))
-    browserRow.addView(toolbarButton("Downloads") { openDownloads() }, LinearLayout.LayoutParams(0, dp(46), 1.15f))
+    browserRow.addView(toolbarButton("＋", "Blank") { openBlankPage(true) }, LinearLayout.LayoutParams(0, dp(46), 0.9f))
+    browserRow.addView(toolbarButton("★", "Add bookmark") { addBookmark() }, LinearLayout.LayoutParams(0, dp(46), 1f))
+    browserRow.addView(toolbarButton("☆", "Bookmarks") { showBookmarks() }, LinearLayout.LayoutParams(0, dp(46), 1f))
+    browserRow.addView(toolbarButton("◷", "History") { showHistory() }, LinearLayout.LayoutParams(0, dp(46), 1f))
+    browserRow.addView(toolbarButton("⇩", "Downloads") { openDownloads() }, LinearLayout.LayoutParams(0, dp(46), 1f))
 
     val helpRow = LinearLayout(this).apply {
       orientation = LinearLayout.HORIZONTAL
@@ -201,8 +225,8 @@ class BrowserActivity : AppCompatActivity() {
       setPadding(0, dp(6), 0, 0)
     }
     topBar.addView(helpRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(38)))
-    helpRow.addView(toolbarButton(if (phoneMode) "Keyboard" else "Open Keyboard") { focusAddressBar(true) }, LinearLayout.LayoutParams(0, dp(34), 1f))
-    helpRow.addView(toolbarButton(if (phoneMode) "Page" else "Focus Page") { focusWebPage() }, LinearLayout.LayoutParams(0, dp(34), 1f))
+    helpRow.addView(toolbarButton("⌨", "Keyboard") { focusAddressBar(true) }, LinearLayout.LayoutParams(0, dp(34), 1f))
+    helpRow.addView(toolbarButton("▣", "Focus page") { focusWebPage() }, LinearLayout.LayoutParams(0, dp(34), 1f))
 
     val titleClockBox = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
@@ -243,7 +267,7 @@ class BrowserActivity : AppCompatActivity() {
     root.addView(webView, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
 
     statusText = TextView(this).apply {
-      text = "Smooth pointer. Edge scroll uses WebView + page JavaScript."
+      text = "Icon toolbar active. Champak image opens Learn With Champak."
       textSize = if (phoneMode) 12f else 14f
       setTextColor(Color.rgb(218, 240, 255))
       gravity = Gravity.CENTER_VERTICAL
@@ -342,21 +366,23 @@ class BrowserActivity : AppCompatActivity() {
     }
   }
 
-  private fun toolbarButton(label: String, action: () -> Unit): Button {
+  private fun toolbarButton(icon: String, description: String, action: () -> Unit): Button {
     return Button(this).apply {
-      text = label
-      textSize = 11.5f
+      text = icon
+      contentDescription = description
+      textSize = 20f
       isAllCaps = false
       setTextColor(Color.WHITE)
       typeface = Typeface.DEFAULT_BOLD
       background = buttonBg(false)
       isFocusable = true
       isFocusableInTouchMode = true
-      setPadding(dp(3), 0, dp(3), 0)
+      setPadding(dp(2), 0, dp(2), 0)
 
       setOnFocusChangeListener { view, hasFocus ->
         background = buttonBg(hasFocus)
         view.animate().scaleX(if (hasFocus) 1.04f else 1f).scaleY(if (hasFocus) 1.04f else 1f).setDuration(100).start()
+        if (hasFocus) showStatus(description)
       }
 
       setOnClickListener { action() }
@@ -664,9 +690,8 @@ class BrowserActivity : AppCompatActivity() {
     val js = """
       (function(){
         var amount = $amount;
-        var scrolled = false;
         var el = document.scrollingElement || document.documentElement || document.body;
-        if (el) { el.scrollBy({top: amount, left: 0, behavior: 'smooth'}); scrolled = true; }
+        if (el) { el.scrollBy({top: amount, left: 0, behavior: 'smooth'}); }
         var midX = Math.floor(window.innerWidth / 2);
         var midY = amount > 0 ? window.innerHeight - 12 : 12;
         var hit = document.elementFromPoint(midX, midY);
@@ -731,6 +756,36 @@ class BrowserActivity : AppCompatActivity() {
     pointer.bringToFront()
   }
 
+  private fun loadBrandIconInto(imageView: ImageView) {
+    try {
+      val bitmap = BitmapFactory.decodeStream(assets.open("champak-photo.png"))
+      if (bitmap != null) {
+        imageView.setImageBitmap(bitmap)
+        return
+      }
+    } catch (_: Exception) { }
+
+    try {
+      val encoded = BufferedReader(InputStreamReader(assets.open("champak_photo.b64"))).readText().replace("\n", "").trim()
+      val bytes = Base64.decode(encoded, Base64.DEFAULT)
+      val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+      if (bitmap != null) {
+        imageView.setImageBitmap(bitmap)
+        return
+      }
+    } catch (_: Exception) { }
+
+    imageView.setBackgroundColor(Color.rgb(12, 84, 130))
+    Thread {
+      try {
+        val bitmap = BitmapFactory.decodeStream(URL("https://programmer-s-picnic.github.io/json-images/tv/champak-photo.png").openStream())
+        if (bitmap != null) runOnUiThread { imageView.setImageBitmap(bitmap) }
+      } catch (ex: Exception) {
+        Log.e(tag, "Could not load browser brand icon", ex)
+      }
+    }.start()
+  }
+
   private fun buttonBg(focused: Boolean): GradientDrawable {
     val colors = if (focused) {
       intArrayOf(Color.rgb(255, 168, 37), Color.rgb(255, 111, 0))
@@ -740,6 +795,14 @@ class BrowserActivity : AppCompatActivity() {
     return GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, colors).apply {
       cornerRadius = dp(14).toFloat()
       setStroke(dp(if (focused) 3 else 1), if (focused) Color.WHITE else Color.rgb(82, 204, 255))
+    }
+  }
+
+  private fun rounded(color: Int, radius: Int, strokeColor: Int, strokeWidth: Int): GradientDrawable {
+    return GradientDrawable().apply {
+      setColor(color)
+      cornerRadius = radius.toFloat()
+      if (strokeWidth > 0) setStroke(strokeWidth, strokeColor)
     }
   }
 
