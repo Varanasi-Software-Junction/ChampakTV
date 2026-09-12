@@ -140,7 +140,7 @@ class BrowserActivity : AppCompatActivity() {
     addressBar = EditText(this).apply {
       hint = "Enter website address or search"
       textSize = if (phoneMode) 14f else 16f
-      singleLine = true
+      setSingleLine(true)
       setTextColor(Color.rgb(3, 44, 84))
       setHintTextColor(Color.rgb(80, 105, 125))
       setPadding(dp(12), 0, dp(12), 0)
