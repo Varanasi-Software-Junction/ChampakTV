@@ -1,6 +1,7 @@
 package com.learnwithchampak.tv
 
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -11,7 +12,6 @@ import android.os.Looper
 import android.util.Log
 import android.view.Gravity
 import android.view.KeyEvent
-import android.view.View
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -53,7 +53,9 @@ class BrowserActivity : AppCompatActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
-    requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+    if (resources.configuration.screenWidthDp >= 700) {
+      requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+    }
 
     val startTitle = intent.getStringExtra(EXTRA_TITLE) ?: "Champak TV Browser"
     val startUrl = intent.getStringExtra(EXTRA_URL) ?: "https://www.learnwithchampak.live"
@@ -77,21 +79,29 @@ class BrowserActivity : AppCompatActivity() {
   }
 
   private fun buildScreen(startTitle: String) {
+    val phoneMode = resources.configuration.screenWidthDp < 700
+
     val root = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
       setBackgroundColor(Color.rgb(3, 15, 34))
     }
 
     val topBar = LinearLayout(this).apply {
-      orientation = LinearLayout.HORIZONTAL
+      orientation = if (phoneMode) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
       gravity = Gravity.CENTER_VERTICAL
-      setPadding(dp(14), dp(10), dp(14), dp(8))
+      setPadding(dp(10), dp(8), dp(10), dp(8))
       background = GradientDrawable(
         GradientDrawable.Orientation.LEFT_RIGHT,
         intArrayOf(Color.rgb(2, 31, 69), Color.rgb(6, 85, 145))
       )
     }
-    root.addView(topBar, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(78)))
+    root.addView(topBar, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(if (phoneMode) 156 else 78)))
+
+    val buttonRow = LinearLayout(this).apply {
+      orientation = LinearLayout.HORIZONTAL
+      gravity = Gravity.CENTER_VERTICAL
+    }
+    topBar.addView(buttonRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(54)))
 
     val backButton = toolbarButton("Back") { goBackOrClose() }
     val forwardButton = toolbarButton("Forward") {
@@ -99,24 +109,24 @@ class BrowserActivity : AppCompatActivity() {
     }
     val reloadButton = toolbarButton("Reload") { webView.reload() }
     val homeButton = toolbarButton("Home") { finish() }
-    val externalButton = toolbarButton("Open Outside") { openOutside() }
+    val externalButton = toolbarButton(if (phoneMode) "Outside" else "Open Outside") { openOutside() }
 
-    topBar.addView(backButton, LinearLayout.LayoutParams(dp(112), dp(54)))
-    topBar.addView(forwardButton, LinearLayout.LayoutParams(dp(124), dp(54)))
-    topBar.addView(reloadButton, LinearLayout.LayoutParams(dp(116), dp(54)))
-    topBar.addView(homeButton, LinearLayout.LayoutParams(dp(100), dp(54)))
-    topBar.addView(externalButton, LinearLayout.LayoutParams(dp(156), dp(54)))
+    buttonRow.addView(backButton, LinearLayout.LayoutParams(0, dp(50), 1f))
+    buttonRow.addView(forwardButton, LinearLayout.LayoutParams(0, dp(50), 1f))
+    buttonRow.addView(reloadButton, LinearLayout.LayoutParams(0, dp(50), 1f))
+    buttonRow.addView(homeButton, LinearLayout.LayoutParams(0, dp(50), 1f))
+    buttonRow.addView(externalButton, LinearLayout.LayoutParams(0, dp(50), 1.2f))
 
     val titleClockBox = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
       gravity = Gravity.CENTER_VERTICAL or Gravity.RIGHT
-      setPadding(dp(16), 0, 0, 0)
+      setPadding(0, dp(8), 0, 0)
     }
-    topBar.addView(titleClockBox, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f))
+    topBar.addView(titleClockBox, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
 
     titleText = TextView(this).apply {
       text = startTitle
-      textSize = 19f
+      textSize = if (phoneMode) 15f else 19f
       setTextColor(Color.WHITE)
       typeface = Typeface.DEFAULT_BOLD
       gravity = Gravity.RIGHT
@@ -125,7 +135,7 @@ class BrowserActivity : AppCompatActivity() {
     titleClockBox.addView(titleText)
 
     clockText = TextView(this).apply {
-      textSize = 16f
+      textSize = if (phoneMode) 13f else 16f
       setTextColor(Color.rgb(255, 221, 128))
       gravity = Gravity.RIGHT
       maxLines = 1
@@ -146,17 +156,17 @@ class BrowserActivity : AppCompatActivity() {
     root.addView(webView, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
 
     statusText = TextView(this).apply {
-      text = "Browser controls: Back, Forward, Reload, Home, Open Outside. Use Up/Down to scroll page."
-      textSize = 14f
+      text = if (phoneMode) "Touch page to use it. Buttons are at top." else "Browser controls: Back, Forward, Reload, Home, Open Outside. Use Up/Down to scroll page."
+      textSize = if (phoneMode) 12f else 14f
       setTextColor(Color.rgb(218, 240, 255))
       gravity = Gravity.CENTER_VERTICAL
-      setPadding(dp(16), 0, dp(16), 0)
+      setPadding(dp(12), 0, dp(12), 0)
       background = solid(Color.rgb(4, 24, 54), dp(0))
     }
     root.addView(statusText, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(38)))
 
     setContentView(root)
-    backButton.requestFocus()
+    if (!phoneMode) backButton.requestFocus()
   }
 
   private fun setupWebView() {
@@ -169,7 +179,7 @@ class BrowserActivity : AppCompatActivity() {
       loadsImagesAutomatically = true
       loadWithOverviewMode = true
       useWideViewPort = true
-      builtInZoomControls = false
+      builtInZoomControls = true
       displayZoomControls = false
       cacheMode = WebSettings.LOAD_DEFAULT
       mediaPlaybackRequiresUserGesture = false
@@ -195,9 +205,7 @@ class BrowserActivity : AppCompatActivity() {
     webView.webChromeClient = object : WebChromeClient() {
       override fun onProgressChanged(view: WebView, newProgress: Int) {
         progress.progress = newProgress
-        if (newProgress >= 100) {
-          progress.progress = 0
-        }
+        if (newProgress >= 100) progress.progress = 0
       }
 
       override fun onReceivedTitle(view: WebView, title: String) {
@@ -209,18 +217,18 @@ class BrowserActivity : AppCompatActivity() {
   private fun toolbarButton(label: String, action: () -> Unit): Button {
     return Button(this).apply {
       text = label
-      textSize = 13f
+      textSize = 12f
       isAllCaps = false
       setTextColor(Color.WHITE)
       typeface = Typeface.DEFAULT_BOLD
       background = buttonBg(false)
       isFocusable = true
       isFocusableInTouchMode = true
-      setPadding(dp(8), 0, dp(8), 0)
+      setPadding(dp(4), 0, dp(4), 0)
 
       setOnFocusChangeListener { view, hasFocus ->
         background = buttonBg(hasFocus)
-        view.animate().scaleX(if (hasFocus) 1.06f else 1f).scaleY(if (hasFocus) 1.06f else 1f).setDuration(100).start()
+        view.animate().scaleX(if (hasFocus) 1.04f else 1f).scaleY(if (hasFocus) 1.04f else 1f).setDuration(100).start()
       }
 
       setOnClickListener { action() }
@@ -228,11 +236,7 @@ class BrowserActivity : AppCompatActivity() {
   }
 
   private fun goBackOrClose() {
-    if (webView.canGoBack()) {
-      webView.goBack()
-    } else {
-      finish()
-    }
+    if (webView.canGoBack()) webView.goBack() else finish()
   }
 
   private fun openOutside() {
@@ -246,9 +250,7 @@ class BrowserActivity : AppCompatActivity() {
   }
 
   private fun showStatus(message: String) {
-    if (::statusText.isInitialized) {
-      statusText.text = message
-    }
+    if (::statusText.isInitialized) statusText.text = message
   }
 
   override fun dispatchKeyEvent(event: KeyEvent): Boolean {
@@ -283,11 +285,7 @@ class BrowserActivity : AppCompatActivity() {
   }
 
   private fun buttonBg(focused: Boolean): GradientDrawable {
-    val colors = if (focused) {
-      intArrayOf(Color.rgb(255, 168, 37), Color.rgb(255, 111, 0))
-    } else {
-      intArrayOf(Color.rgb(8, 77, 138), Color.rgb(4, 45, 98))
-    }
+    val colors = if (focused) intArrayOf(Color.rgb(255, 168, 37), Color.rgb(255, 111, 0)) else intArrayOf(Color.rgb(8, 77, 138), Color.rgb(4, 45, 98))
     return GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, colors).apply {
       cornerRadius = dp(14).toFloat()
       setStroke(dp(if (focused) 3 else 1), if (focused) Color.WHITE else Color.rgb(82, 204, 255))
