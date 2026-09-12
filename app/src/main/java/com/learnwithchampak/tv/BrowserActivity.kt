@@ -74,6 +74,8 @@ class BrowserActivity : AppCompatActivity() {
   private var pointerY = 0f
   private var lastEdgeScrollAt = 0L
   private var toolbarMode = false
+  private var okLongPressRunnable: Runnable? = null
+  private var okLongPressHandled = false
 
   private val clockRunnable = object : Runnable {
     override fun run() {
@@ -102,6 +104,7 @@ class BrowserActivity : AppCompatActivity() {
   }
 
   override fun onDestroy() {
+    cancelOkLongPress()
     clockHandler.removeCallbacks(clockRunnable)
     webView.destroy()
     super.onDestroy()
@@ -264,7 +267,7 @@ class BrowserActivity : AppCompatActivity() {
     root.addView(webView, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
 
     statusText = TextView(this).apply {
-      text = "Search key returns to browser buttons. Menu opens keyboard."
+      text = "Long-press OK for browser menu. Search key returns to buttons."
       textSize = if (phoneMode) 12f else 14f
       setTextColor(Color.rgb(218, 240, 255))
       gravity = Gravity.CENTER_VERTICAL
@@ -342,7 +345,7 @@ class BrowserActivity : AppCompatActivity() {
         titleText.text = if (url == "about:blank") "Blank Browser" else title
         if (url == "about:blank") addressBar.setText("") else addressBar.setText(url)
         if (url != "about:blank") addHistory(title, url)
-        showStatus("Pointer active. Search key returns to browser buttons.")
+        showStatus("Pointer active. Long-press OK for menu; Search key returns to buttons.")
         progress.progress = 0
       }
 
@@ -414,6 +417,7 @@ class BrowserActivity : AppCompatActivity() {
 
   private fun focusAddressBar(openKeyboard: Boolean) {
     toolbarMode = false
+    cancelOkLongPress()
     addressBar.isFocusableInTouchMode = true
     addressBar.requestFocus()
     addressBar.requestFocusFromTouch()
@@ -435,16 +439,18 @@ class BrowserActivity : AppCompatActivity() {
 
   private fun focusWebPage() {
     toolbarMode = false
+    cancelOkLongPress()
     hideKeyboard()
     addressBar.clearFocus()
     webView.requestFocus()
     pointer.visibility = View.VISIBLE
     pointer.bringToFront()
-    showStatus("Web page mode. Search key returns to buttons; Menu opens keyboard.")
+    showStatus("Web page mode. Long-press OK for menu; Search key returns to buttons.")
   }
 
   private fun focusToolbar() {
     toolbarMode = true
+    cancelOkLongPress()
     hideKeyboard()
     addressBar.clearFocus()
     pointer.visibility = View.GONE
@@ -582,6 +588,59 @@ class BrowserActivity : AppCompatActivity() {
     if (::statusText.isInitialized) statusText.text = message
   }
 
+  private fun isOkKey(keyCode: Int): Boolean {
+    return keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+      keyCode == KeyEvent.KEYCODE_ENTER ||
+      keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
+  }
+
+  private fun startOkLongPress() {
+    cancelOkLongPress()
+    okLongPressHandled = false
+    val task = Runnable {
+      okLongPressHandled = true
+      showBrowserCommandMenu()
+    }
+    okLongPressRunnable = task
+    clockHandler.postDelayed(task, 650)
+  }
+
+  private fun finishOkPress() {
+    val wasLongPress = okLongPressHandled
+    cancelOkLongPress()
+    if (!wasLongPress) clickAtPointer()
+  }
+
+  private fun cancelOkLongPress() {
+    okLongPressRunnable?.let { clockHandler.removeCallbacks(it) }
+    okLongPressRunnable = null
+  }
+
+  private fun showBrowserCommandMenu() {
+    cancelOkLongPress()
+    hideKeyboard()
+    val options = arrayOf(
+      "Return to Buttons",
+      "Open Keyboard",
+      "Open Learn With Champak",
+      "Exit Browser",
+      "Cancel"
+    )
+    AlertDialog.Builder(this)
+      .setTitle("Browser Menu")
+      .setItems(options) { dialog, which ->
+        when (which) {
+          0 -> focusToolbar()
+          1 -> focusAddressBar(true)
+          2 -> loadAddress(HOME_URL)
+          3 -> finish()
+          else -> dialog.dismiss()
+        }
+      }
+      .show()
+    showStatus("Browser menu opened")
+  }
+
   override fun dispatchTouchEvent(event: MotionEvent): Boolean {
     if (::stage.isInitialized && ::pointer.isInitialized) {
       if (isInsideView(addressBar, event.rawX.toInt(), event.rawY.toInt())) {
@@ -604,11 +663,16 @@ class BrowserActivity : AppCompatActivity() {
   }
 
   override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-    if (event.action == KeyEvent.ACTION_DOWN) {
-      if (currentFocus == addressBar) return super.dispatchKeyEvent(event)
+    if (currentFocus == addressBar) return super.dispatchKeyEvent(event)
 
+    if (event.action == KeyEvent.ACTION_UP && isOkKey(event.keyCode) && !toolbarMode) {
+      finishOkPress()
+      return true
+    }
+
+    if (event.action == KeyEvent.ACTION_DOWN) {
       if (event.keyCode == KeyEvent.KEYCODE_MENU) {
-        focusAddressBar(true)
+        showBrowserCommandMenu()
         return true
       }
       if (event.keyCode == KeyEvent.KEYCODE_SEARCH || event.keyCode == KeyEvent.KEYCODE_GUIDE) {
@@ -620,13 +684,24 @@ class BrowserActivity : AppCompatActivity() {
         return super.dispatchKeyEvent(event)
       }
 
+      if (isOkKey(event.keyCode)) {
+        if (event.repeatCount == 0) startOkLongPress()
+        if (event.isLongPress || event.repeatCount > 0) {
+          if (!okLongPressHandled) {
+            okLongPressHandled = true
+            cancelOkLongPress()
+            showBrowserCommandMenu()
+          }
+        }
+        return true
+      }
+
       return when (event.keyCode) {
-        KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE -> { goBackOrClose(); true }
-        KeyEvent.KEYCODE_DPAD_UP -> { movePointer(0, -1); true }
-        KeyEvent.KEYCODE_DPAD_DOWN -> { movePointer(0, 1); true }
-        KeyEvent.KEYCODE_DPAD_LEFT -> { movePointer(-1, 0); true }
-        KeyEvent.KEYCODE_DPAD_RIGHT -> { movePointer(1, 0); true }
-        KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> { clickAtPointer(); true }
+        KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE -> { cancelOkLongPress(); goBackOrClose(); true }
+        KeyEvent.KEYCODE_DPAD_UP -> { cancelOkLongPress(); movePointer(0, -1); true }
+        KeyEvent.KEYCODE_DPAD_DOWN -> { cancelOkLongPress(); movePointer(0, 1); true }
+        KeyEvent.KEYCODE_DPAD_LEFT -> { cancelOkLongPress(); movePointer(-1, 0); true }
+        KeyEvent.KEYCODE_DPAD_RIGHT -> { cancelOkLongPress(); movePointer(1, 0); true }
         else -> super.dispatchKeyEvent(event)
       }
     }
@@ -647,7 +722,7 @@ class BrowserActivity : AppCompatActivity() {
     keepPointerNearWebArea()
     updatePointerPosition(true)
     val scrolled = autoScrollWebAtPointerEdges(dy)
-    showStatus(if (scrolled) "Scrolling opened web page" else "Pointer moved. Search key returns to buttons.")
+    showStatus(if (scrolled) "Scrolling opened web page" else "Pointer moved. Long-press OK for menu.")
   }
 
   private fun clickAtPointer() {
@@ -657,7 +732,7 @@ class BrowserActivity : AppCompatActivity() {
     }
 
     val local = pointerLocalToWeb() ?: run {
-      showStatus("Move pointer inside the web page, or press Search for buttons")
+      showStatus("Move pointer inside the web page, or long-press OK for menu")
       return
     }
     val now = SystemClock.uptimeMillis()
