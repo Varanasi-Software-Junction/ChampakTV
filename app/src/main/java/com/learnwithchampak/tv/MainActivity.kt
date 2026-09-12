@@ -37,6 +37,7 @@ class MainActivity : AppCompatActivity() {
   private lateinit var versionText: TextView
   private lateinit var clockCanvas: ClockCanvasView
   private lateinit var stage: FrameLayout
+  private lateinit var scrollView: ScrollView
   private lateinit var pointer: TextView
   private val linkButtons = mutableListOf<Button>()
   private val tag = "ChampakTV"
@@ -78,7 +79,7 @@ class MainActivity : AppCompatActivity() {
       isFocusableInTouchMode = true
     }
 
-    val scroll = ScrollView(this).apply {
+    scrollView = ScrollView(this).apply {
       isFocusable = false
       setBackgroundColor(Color.rgb(4, 15, 32))
     }
@@ -124,7 +125,7 @@ class MainActivity : AppCompatActivity() {
     left.addView(space(if (phoneMode) 10 else 18))
     left.addView(text("Champak Roy", if (phoneMode) 24f else 30f, Color.WHITE, true).apply { gravity = Gravity.CENTER })
     left.addView(text("AI • ML • Python • DSA • Programming", if (phoneMode) 14f else 17f, Color.rgb(202, 232, 255), false).apply { gravity = Gravity.CENTER })
-    left.addView(text("Pointer: remote arrows or touch. OK/tap clicks.", if (phoneMode) 13f else 15f, Color.rgb(255, 221, 128), true).apply {
+    left.addView(text("Pointer: remote arrows or touch. Edges scroll.", if (phoneMode) 13f else 15f, Color.rgb(255, 221, 128), true).apply {
       gravity = Gravity.CENTER
       setPadding(0, dp(10), 0, 0)
     })
@@ -197,15 +198,15 @@ class MainActivity : AppCompatActivity() {
     linkPanel.addView(versionText, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
 
     statusText = text(
-      if (phoneMode) "Touch to move pointer. Tap a button to open." else "Use TV remote arrows to move the pointer. Press OK to click.",
+      if (phoneMode) "Touch near top/bottom edge to scroll." else "Use TV remote arrows. Top/bottom edge scrolls the page.",
       if (phoneMode) 14f else 16f,
       Color.rgb(218, 240, 255),
       false
     ).apply { setPadding(0, dp(14), 0, 0) }
     right.addView(statusText)
 
-    scroll.addView(root)
-    stage.addView(scroll, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+    scrollView.addView(root)
+    stage.addView(scrollView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
 
     pointer = TextView(this).apply {
       text = "➤"
@@ -358,10 +359,14 @@ class MainActivity : AppCompatActivity() {
           pointerX = (event.x - pointer.width / 2f).coerceIn(0f, (stage.width - pointer.width).toFloat())
           pointerY = (event.y - pointer.height / 2f).coerceIn(0f, (stage.height - pointer.height).toFloat())
           updatePointerPosition()
-          focusButtonUnderPointer()
+          val scrolled = autoScrollAtPointerEdges(0)
+          val target = focusButtonUnderPointer()
           if (event.actionMasked == MotionEvent.ACTION_UP) {
-            val target = buttonUnderPointer()
-            statusText.text = if (target != null) "Tap/OK on: ${target.text.toString().lineSequence().first()}" else "Pointer moved"
+            statusText.text = when {
+              scrolled -> "Scrolled page from edge"
+              target != null -> "Tap/OK on: ${target.text.toString().lineSequence().first()}"
+              else -> "Pointer moved"
+            }
           }
         }
       }
@@ -385,11 +390,54 @@ class MainActivity : AppCompatActivity() {
 
   private fun movePointer(dx: Int, dy: Int) {
     val step = dp(54).toFloat()
-    pointerX = (pointerX + dx * step).coerceIn(0f, (stage.width - pointer.width).toFloat())
-    pointerY = (pointerY + dy * step).coerceIn(0f, (stage.height - pointer.height).toFloat())
+    val maxX = (stage.width - pointer.width).coerceAtLeast(0).toFloat()
+    val maxY = (stage.height - pointer.height).coerceAtLeast(0).toFloat()
+    val desiredX = pointerX + dx * step
+    val desiredY = pointerY + dy * step
+
+    pointerX = desiredX.coerceIn(0f, maxX)
+    pointerY = desiredY.coerceIn(0f, maxY)
     updatePointerPosition()
+
+    val scrolled = autoScrollAtPointerEdges(dy)
     val target = focusButtonUnderPointer()
-    statusText.text = if (target != null) "Pointer over: ${target.text.toString().lineSequence().first()}" else "Pointer moved"
+    statusText.text = when {
+      scrolled -> if (dy < 0) "Pointer at top edge: scrolling up" else "Pointer at bottom edge: scrolling down"
+      target != null -> "Pointer over: ${target.text.toString().lineSequence().first()}"
+      desiredY < 0f -> "Top edge reached"
+      desiredY > maxY -> "Bottom edge reached"
+      else -> "Pointer moved"
+    }
+  }
+
+  private fun autoScrollAtPointerEdges(dy: Int): Boolean {
+    if (!::scrollView.isInitialized || !::stage.isInitialized || !::pointer.isInitialized) return false
+    if (stage.height <= 0) return false
+
+    val edge = dp(72).toFloat()
+    val scrollAmount = dp(130)
+    val maxPointerY = (stage.height - pointer.height).coerceAtLeast(0).toFloat()
+    val pointerBottom = pointerY + pointer.height
+    val nearTop = pointerY <= edge
+    val nearBottom = pointerBottom >= stage.height - edge
+    val canScrollUp = scrollView.scrollY > 0
+    val canScrollDown = scrollView.getChildAt(0)?.let { child -> scrollView.scrollY + scrollView.height < child.height } == true
+
+    return when {
+      (dy < 0 || nearTop) && nearTop && canScrollUp -> {
+        scrollView.smoothScrollBy(0, -scrollAmount)
+        pointerY = (edge + dp(8)).coerceAtMost(maxPointerY)
+        updatePointerPosition()
+        true
+      }
+      (dy > 0 || nearBottom) && nearBottom && canScrollDown -> {
+        scrollView.smoothScrollBy(0, scrollAmount)
+        pointerY = (stage.height - edge - pointer.height - dp(8)).coerceIn(0f, maxPointerY)
+        updatePointerPosition()
+        true
+      }
+      else -> false
+    }
   }
 
   private fun updatePointerPosition() {
