@@ -6,7 +6,6 @@ import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
-import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -14,7 +13,6 @@ import android.util.Base64
 import android.util.Log
 import android.view.Gravity
 import android.view.KeyEvent
-import android.view.View
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ImageView
@@ -27,27 +25,25 @@ import androidx.appcompat.app.AppCompatActivity
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.URL
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
 
   private lateinit var statusText: TextView
-  private lateinit var clockText: TextView
+  private lateinit var clockCanvas: ClockCanvasView
   private lateinit var root: LinearLayout
   private lateinit var stage: FrameLayout
   private lateinit var pointer: TextView
   private val linkButtons = mutableListOf<Button>()
   private val tag = "ChampakTV"
   private val clockHandler = Handler(Looper.getMainLooper())
-  private val clockFormat = SimpleDateFormat("EEE, dd MMM yyyy • hh:mm:ss a", Locale.getDefault())
   private var pointerX = 0f
   private var pointerY = 0f
 
   private val clockRunnable = object : Runnable {
     override fun run() {
-      updateClock()
+      if (::clockCanvas.isInitialized) {
+        clockCanvas.invalidate()
+      }
       clockHandler.postDelayed(this, 1000)
     }
   }
@@ -62,12 +58,6 @@ class MainActivity : AppCompatActivity() {
   override fun onDestroy() {
     clockHandler.removeCallbacks(clockRunnable)
     super.onDestroy()
-  }
-
-  private fun updateClock() {
-    if (::clockText.isInitialized) {
-      clockText.text = clockFormat.format(Date())
-    }
   }
 
   private fun buildScreen() {
@@ -128,11 +118,13 @@ class MainActivity : AppCompatActivity() {
     }
     root.addView(right, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 0.58f))
 
-    clockText = text("", 19f, Color.rgb(255, 221, 128), true).apply {
-      gravity = Gravity.RIGHT
-      setPadding(0, 0, 0, dp(8))
-    }
-    right.addView(clockText, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+    clockCanvas = ClockCanvasView(this)
+    right.addView(
+      clockCanvas,
+      LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(150)).apply {
+        bottomMargin = dp(10)
+      }
+    )
 
     val installBadge = text("Installed as: Learn With Champak TV", 16f, Color.rgb(255, 221, 128), true)
     installBadge.setPadding(0, 0, 0, dp(6))
