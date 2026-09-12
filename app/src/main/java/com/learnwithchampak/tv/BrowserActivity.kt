@@ -14,9 +14,11 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.inputmethod.EditorInfo
 import android.webkit.CookieManager
 import android.webkit.URLUtil
@@ -28,6 +30,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -50,15 +53,20 @@ class BrowserActivity : AppCompatActivity() {
   }
 
   private val tag = "ChampakTVBrowser"
+  private lateinit var stage: FrameLayout
   private lateinit var webView: WebView
+  private lateinit var pointer: TextView
   private lateinit var titleText: TextView
   private lateinit var clockText: TextView
   private lateinit var statusText: TextView
   private lateinit var addressBar: EditText
   private lateinit var progress: ProgressBar
   private lateinit var prefs: SharedPreferences
+  private val browserButtons = mutableListOf<Button>()
   private val clockHandler = Handler(Looper.getMainLooper())
   private val clockFormat = SimpleDateFormat("EEE, dd MMM yyyy • hh:mm:ss a", Locale.getDefault())
+  private var pointerX = 0f
+  private var pointerY = 0f
 
   private val clockRunnable = object : Runnable {
     override fun run() {
@@ -96,10 +104,17 @@ class BrowserActivity : AppCompatActivity() {
   private fun buildScreen(startTitle: String) {
     val phoneMode = resources.configuration.screenWidthDp < 700
 
+    stage = FrameLayout(this).apply {
+      setBackgroundColor(Color.rgb(3, 15, 34))
+      isFocusable = true
+      isFocusableInTouchMode = true
+    }
+
     val root = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
       setBackgroundColor(Color.rgb(3, 15, 34))
     }
+    stage.addView(root, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
 
     val topBar = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
@@ -207,7 +222,7 @@ class BrowserActivity : AppCompatActivity() {
     root.addView(webView, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
 
     statusText = TextView(this).apply {
-      text = "Browser ready: address bar, bookmarks, history and downloads enabled."
+      text = "Browser pointer ready: remote arrows move pointer, OK clicks page, edge scrolls."
       textSize = if (phoneMode) 12f else 14f
       setTextColor(Color.rgb(218, 240, 255))
       gravity = Gravity.CENTER_VERTICAL
@@ -216,8 +231,28 @@ class BrowserActivity : AppCompatActivity() {
     }
     root.addView(statusText, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(38)))
 
-    setContentView(root)
-    if (!phoneMode) addressBar.requestFocus()
+    pointer = TextView(this).apply {
+      text = "➤"
+      textSize = if (phoneMode) 30f else 38f
+      setTextColor(Color.rgb(255, 221, 128))
+      setShadowLayer(10f, 0f, 0f, Color.BLACK)
+      typeface = Typeface.DEFAULT_BOLD
+      gravity = Gravity.CENTER
+      elevation = dp(30).toFloat()
+      isClickable = false
+      isFocusable = false
+    }
+    stage.addView(pointer, FrameLayout.LayoutParams(dp(56), dp(56)))
+
+    setContentView(stage)
+
+    stage.post {
+      val rect = webRectOnStage()
+      pointerX = (rect.left + rect.width() * 0.50f - pointer.width / 2f).coerceIn(0f, (stage.width - pointer.width).toFloat())
+      pointerY = (rect.top + rect.height() * 0.50f - pointer.height / 2f).coerceIn(0f, (stage.height - pointer.height).toFloat())
+      updatePointerPosition()
+      webView.requestFocus()
+    }
   }
 
   private fun setupWebView() {
@@ -268,7 +303,7 @@ class BrowserActivity : AppCompatActivity() {
         titleText.text = title
         addressBar.setText(url)
         addHistory(title, url)
-        showStatus(url)
+        showStatus("Pointer active: arrows move, OK clicks web page, top/bottom edge scrolls.")
         progress.progress = 0
       }
 
@@ -307,6 +342,7 @@ class BrowserActivity : AppCompatActivity() {
       }
 
       setOnClickListener { action() }
+      browserButtons.add(this)
     }
   }
 
@@ -315,6 +351,7 @@ class BrowserActivity : AppCompatActivity() {
     addressBar.setText(target)
     showStatus("Opening: $target")
     webView.loadUrl(target)
+    webView.requestFocus()
   }
 
   private fun normalizeUrl(input: String): String {
@@ -447,6 +484,20 @@ class BrowserActivity : AppCompatActivity() {
     if (::statusText.isInitialized) statusText.text = message
   }
 
+  override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+    if (::stage.isInitialized && ::pointer.isInitialized) {
+      when (event.actionMasked) {
+        MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE, MotionEvent.ACTION_UP -> {
+          pointerX = (event.x - pointer.width / 2f).coerceIn(0f, (stage.width - pointer.width).toFloat())
+          pointerY = (event.y - pointer.height / 2f).coerceIn(0f, (stage.height - pointer.height).toFloat())
+          updatePointerPosition()
+          if (event.actionMasked == MotionEvent.ACTION_MOVE) maybeScrollWebPageAtPointer()
+        }
+      }
+    }
+    return super.dispatchTouchEvent(event)
+  }
+
   override fun dispatchKeyEvent(event: KeyEvent): Boolean {
     if (event.action == KeyEvent.ACTION_DOWN) {
       when (event.keyCode) {
@@ -454,28 +505,134 @@ class BrowserActivity : AppCompatActivity() {
           goBackOrClose()
           return true
         }
-        KeyEvent.KEYCODE_DPAD_DOWN -> {
-          if (currentFocus == webView) {
-            webView.scrollBy(0, dp(150))
-            showStatus("Scroll down")
+        KeyEvent.KEYCODE_DPAD_UP -> {
+          if (currentFocus != addressBar) {
+            movePointer(0, -1)
             return true
           }
         }
-        KeyEvent.KEYCODE_DPAD_UP -> {
-          if (currentFocus == webView) {
-            webView.scrollBy(0, -dp(150))
-            showStatus("Scroll up")
+        KeyEvent.KEYCODE_DPAD_DOWN -> {
+          if (currentFocus != addressBar) {
+            movePointer(0, 1)
+            return true
+          }
+        }
+        KeyEvent.KEYCODE_DPAD_LEFT -> {
+          if (currentFocus != addressBar) {
+            movePointer(-1, 0)
+            return true
+          }
+        }
+        KeyEvent.KEYCODE_DPAD_RIGHT -> {
+          if (currentFocus != addressBar) {
+            movePointer(1, 0)
+            return true
+          }
+        }
+        KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+          if (currentFocus != addressBar) {
+            clickPointerTarget()
             return true
           }
         }
         KeyEvent.KEYCODE_MENU -> {
           webView.requestFocus()
-          showStatus("Page area focused. Use Up/Down to scroll.")
+          showStatus("Pointer mode: arrows move pointer, OK clicks the web page.")
           return true
         }
       }
     }
     return super.dispatchKeyEvent(event)
+  }
+
+  private fun movePointer(dx: Int, dy: Int) {
+    val step = dp(42).toFloat()
+    pointerX = (pointerX + dx * step).coerceIn(0f, (stage.width - pointer.width).toFloat())
+    pointerY = (pointerY + dy * step).coerceIn(0f, (stage.height - pointer.height).toFloat())
+    updatePointerPosition()
+    maybeScrollWebPageAtPointer()
+    val button = buttonUnderPointer()
+    showStatus(if (button != null) "Pointer over: ${button.text}" else "Pointer inside page. OK clicks, top/bottom edge scrolls.")
+  }
+
+  private fun updatePointerPosition() {
+    pointer.x = pointerX
+    pointer.y = pointerY
+    pointer.bringToFront()
+  }
+
+  private fun maybeScrollWebPageAtPointer() {
+    val rect = webRectOnStage()
+    val cx = pointerX + pointer.width / 2f
+    val cy = pointerY + pointer.height / 2f
+    if (cx < rect.left || cx > rect.right || cy < rect.top || cy > rect.bottom) return
+
+    val edge = dp(44)
+    when {
+      cy <= rect.top + edge -> {
+        webView.scrollBy(0, -dp(120))
+        showStatus("Web page scroll up")
+      }
+      cy >= rect.bottom - edge -> {
+        webView.scrollBy(0, dp(120))
+        showStatus("Web page scroll down")
+      }
+    }
+  }
+
+  private fun clickPointerTarget() {
+    val button = buttonUnderPointer()
+    if (button != null) {
+      button.performClick()
+      return
+    }
+
+    val webRect = webRectOnStage()
+    val centerX = pointerX + pointer.width / 2f
+    val centerY = pointerY + pointer.height / 2f
+    if (centerX < webRect.left || centerX > webRect.right || centerY < webRect.top || centerY > webRect.bottom) {
+      showStatus("Move pointer inside the web page or over a browser button.")
+      return
+    }
+
+    val localX = centerX - webRect.left
+    val localY = centerY - webRect.top
+    tapWebView(localX, localY)
+    showStatus("Clicked web page at pointer")
+  }
+
+  private fun tapWebView(localX: Float, localY: Float) {
+    val downTime = SystemClock.uptimeMillis()
+    val down = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, localX, localY, 0)
+    val up = MotionEvent.obtain(downTime, SystemClock.uptimeMillis() + 80, MotionEvent.ACTION_UP, localX, localY, 0)
+    webView.dispatchTouchEvent(down)
+    webView.dispatchTouchEvent(up)
+    down.recycle()
+    up.recycle()
+  }
+
+  private fun buttonUnderPointer(): Button? {
+    if (!::stage.isInitialized || !::pointer.isInitialized) return null
+    val stageLocation = IntArray(2)
+    stage.getLocationOnScreen(stageLocation)
+    val px = (stageLocation[0] + pointer.x + pointer.width / 2).toInt()
+    val py = (stageLocation[1] + pointer.y + pointer.height / 2).toInt()
+    val rect = android.graphics.Rect()
+    for (button in browserButtons) {
+      button.getGlobalVisibleRect(rect)
+      if (rect.contains(px, py)) return button
+    }
+    return null
+  }
+
+  private fun webRectOnStage(): android.graphics.RectF {
+    val stageLocation = IntArray(2)
+    val webLocation = IntArray(2)
+    stage.getLocationOnScreen(stageLocation)
+    webView.getLocationOnScreen(webLocation)
+    val left = (webLocation[0] - stageLocation[0]).toFloat()
+    val top = (webLocation[1] - stageLocation[1]).toFloat()
+    return android.graphics.RectF(left, top, left + webView.width, top + webView.height)
   }
 
   private fun buttonBg(focused: Boolean): GradientDrawable {
