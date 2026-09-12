@@ -19,8 +19,21 @@
 
     <activity
         android:name=".BrowserActivity"
-        android:exported="false"
-        android:configChanges="keyboard|keyboardHidden|orientation|screenSize|uiMode" />
+        android:exported="true"
+        android:configChanges="keyboard|keyboardHidden|orientation|screenSize|uiMode">
+      <intent-filter>
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        <data android:scheme="http" />
+      </intent-filter>
+      <intent-filter>
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        <data android:scheme="https" />
+      </intent-filter>
+    </activity>
 
     <activity
         android:name=".MainActivity"
