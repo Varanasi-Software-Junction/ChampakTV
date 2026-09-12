@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.ActivityInfo
 import android.graphics.Color
+import android.graphics.Rect
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
@@ -20,6 +21,7 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.webkit.CookieManager
 import android.webkit.URLUtil
 import android.webkit.WebChromeClient
@@ -82,12 +84,19 @@ class BrowserActivity : AppCompatActivity() {
       requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
     }
 
+    val rawStartUrl = intent.getStringExtra(EXTRA_URL).orEmpty()
     val startTitle = intent.getStringExtra(EXTRA_TITLE) ?: "Champak Browser"
-    val startUrl = normalizeUrl(intent.getStringExtra(EXTRA_URL) ?: "https://www.learnwithchampak.live")
+    val openBlank = rawStartUrl.isBlank() || rawStartUrl == "about:blank"
 
-    buildScreen(startTitle)
+    buildScreen(if (openBlank) "Blank Browser" else startTitle)
     setupWebView()
-    loadAddress(startUrl)
+
+    if (openBlank) {
+      openBlankPage(true)
+    } else {
+      loadAddress(rawStartUrl)
+    }
+
     clockHandler.post(clockRunnable)
   }
 
@@ -125,7 +134,7 @@ class BrowserActivity : AppCompatActivity() {
         intArrayOf(Color.rgb(2, 31, 69), Color.rgb(6, 85, 145))
       )
     }
-    root.addView(topBar, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(if (phoneMode) 222 else 164)))
+    root.addView(topBar, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(if (phoneMode) 270 else 208)))
 
     val buttonRow = LinearLayout(this).apply {
       orientation = LinearLayout.HORIZONTAL
@@ -153,7 +162,7 @@ class BrowserActivity : AppCompatActivity() {
     topBar.addView(addressRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(58)))
 
     addressBar = EditText(this).apply {
-      hint = "Enter website address or search"
+      hint = "Blank address bar: type website or search"
       textSize = if (phoneMode) 14f else 16f
       setSingleLine(true)
       setTextColor(Color.rgb(3, 44, 84))
@@ -161,6 +170,18 @@ class BrowserActivity : AppCompatActivity() {
       setPadding(dp(12), 0, dp(12), 0)
       background = solid(Color.WHITE, dp(12))
       imeOptions = EditorInfo.IME_ACTION_GO
+      isFocusable = true
+      isFocusableInTouchMode = true
+      isCursorVisible = true
+      setSelectAllOnFocus(true)
+      setOnClickListener { focusAddressBar(true) }
+      setOnTouchListener { _, _ ->
+        focusAddressBar(true)
+        false
+      }
+      setOnFocusChangeListener { _, hasFocus ->
+        if (hasFocus) addressBar.postDelayed({ showKeyboard() }, 120)
+      }
       setOnEditorActionListener { _, actionId, event ->
         if (actionId == EditorInfo.IME_ACTION_GO || event?.keyCode == KeyEvent.KEYCODE_ENTER) {
           loadAddress(addressBar.text.toString())
@@ -178,10 +199,20 @@ class BrowserActivity : AppCompatActivity() {
     }
     topBar.addView(browserRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(52)))
 
+    browserRow.addView(toolbarButton("Blank") { openBlankPage(true) }, LinearLayout.LayoutParams(0, dp(46), 0.9f))
     browserRow.addView(toolbarButton("Bookmark") { addBookmark() }, LinearLayout.LayoutParams(0, dp(46), 1.25f))
     browserRow.addView(toolbarButton("Bookmarks") { showBookmarks() }, LinearLayout.LayoutParams(0, dp(46), 1.25f))
     browserRow.addView(toolbarButton("History") { showHistory() }, LinearLayout.LayoutParams(0, dp(46), 1f))
     browserRow.addView(toolbarButton("Downloads") { openDownloads() }, LinearLayout.LayoutParams(0, dp(46), 1.15f))
+
+    val helpRow = LinearLayout(this).apply {
+      orientation = LinearLayout.HORIZONTAL
+      gravity = Gravity.CENTER_VERTICAL
+      setPadding(0, dp(6), 0, 0)
+    }
+    topBar.addView(helpRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(38)))
+    helpRow.addView(toolbarButton(if (phoneMode) "Keyboard" else "Open Keyboard") { focusAddressBar(true) }, LinearLayout.LayoutParams(0, dp(34), 1f))
+    helpRow.addView(toolbarButton(if (phoneMode) "Page" else "Focus Page") { focusWebPage() }, LinearLayout.LayoutParams(0, dp(34), 1f))
 
     val titleClockBox = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
@@ -222,7 +253,7 @@ class BrowserActivity : AppCompatActivity() {
     root.addView(webView, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
 
     statusText = TextView(this).apply {
-      text = "Browser pointer ready: remote arrows move pointer, OK clicks page, edge scrolls."
+      text = "Blank browser available. Tap address bar or Keyboard to type."
       textSize = if (phoneMode) 12f else 14f
       setTextColor(Color.rgb(218, 240, 255))
       gravity = Gravity.CENTER_VERTICAL
@@ -247,11 +278,8 @@ class BrowserActivity : AppCompatActivity() {
     setContentView(stage)
 
     stage.post {
-      val rect = webRectOnStage()
-      pointerX = (rect.left + rect.width() * 0.50f - pointer.width / 2f).coerceIn(0f, (stage.width - pointer.width).toFloat())
-      pointerY = (rect.top + rect.height() * 0.50f - pointer.height / 2f).coerceIn(0f, (stage.height - pointer.height).toFloat())
-      updatePointerPosition()
-      webView.requestFocus()
+      placePointerInWebPage()
+      focusWebPage()
     }
   }
 
@@ -300,10 +328,10 @@ class BrowserActivity : AppCompatActivity() {
 
       override fun onPageFinished(view: WebView, url: String) {
         val title = view.title ?: url
-        titleText.text = title
-        addressBar.setText(url)
-        addHistory(title, url)
-        showStatus("Pointer active: arrows move, OK clicks web page, top/bottom edge scrolls.")
+        titleText.text = if (url == "about:blank") "Blank Browser" else title
+        if (url == "about:blank") addressBar.setText("") else addressBar.setText(url)
+        if (url != "about:blank") addHistory(title, url)
+        showStatus("Pointer active. Tap address bar or press Keyboard/Menu to type.")
         progress.progress = 0
       }
 
@@ -346,21 +374,58 @@ class BrowserActivity : AppCompatActivity() {
     }
   }
 
+  private fun openBlankPage(showKeyboardAfterOpen: Boolean) {
+    webView.loadUrl("about:blank")
+    titleText.text = "Blank Browser"
+    addressBar.setText("")
+    showStatus("Blank address bar ready. Start typing a website or search.")
+    if (showKeyboardAfterOpen) addressBar.postDelayed({ focusAddressBar(true) }, 220)
+  }
+
   private fun loadAddress(input: String) {
     val target = normalizeUrl(input)
     addressBar.setText(target)
     showStatus("Opening: $target")
     webView.loadUrl(target)
-    webView.requestFocus()
+    focusWebPage()
   }
 
   private fun normalizeUrl(input: String): String {
     val value = input.trim()
-    if (value.isEmpty()) return "https://www.learnwithchampak.live"
-    if (value.startsWith("http://") || value.startsWith("https://")) return value
+    if (value.isEmpty()) return "about:blank"
+    if (value.startsWith("http://") || value.startsWith("https://") || value == "about:blank") return value
     if (value.startsWith("www.") || (value.contains(".") && !value.contains(" "))) return "https://$value"
     val query = URLEncoder.encode(value, "UTF-8")
     return "https://www.google.com/search?q=$query"
+  }
+
+  private fun focusAddressBar(openKeyboard: Boolean) {
+    addressBar.isFocusableInTouchMode = true
+    addressBar.requestFocus()
+    addressBar.requestFocusFromTouch()
+    addressBar.setSelection(addressBar.text.length)
+    pointer.visibility = TextView.GONE
+    if (openKeyboard) showKeyboard()
+    showStatus("Keyboard ready. Type address/search and press Go.")
+  }
+
+  private fun showKeyboard() {
+    val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+    imm.showSoftInput(addressBar, InputMethodManager.SHOW_IMPLICIT)
+  }
+
+  private fun hideKeyboard() {
+    val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+    imm.hideSoftInputFromWindow(addressBar.windowToken, 0)
+  }
+
+  private fun focusWebPage() {
+    hideKeyboard()
+    addressBar.clearFocus()
+    webView.requestFocus()
+    pointer.visibility = TextView.VISIBLE
+    pointer.bringToFront()
+    showStatus("Page focused. Arrows move pointer; OK clicks page; Menu opens keyboard.")
   }
 
   private fun goBackOrClose() {
@@ -369,6 +434,10 @@ class BrowserActivity : AppCompatActivity() {
 
   private fun openOutside() {
     val url = webView.url ?: return
+    if (url == "about:blank") {
+      showStatus("Blank page has no outside link")
+      return
+    }
     openExternalUrl(url)
   }
 
@@ -417,6 +486,10 @@ class BrowserActivity : AppCompatActivity() {
 
   private fun addBookmark() {
     val url = webView.url ?: addressBar.text.toString()
+    if (url.isBlank() || url == "about:blank") {
+      Toast.makeText(this, "Open a page first", Toast.LENGTH_SHORT).show()
+      return
+    }
     val title = titleText.text.toString().ifBlank { url }
     val item = "$title|$url"
     val items = loadItems(KEY_BOOKMARKS)
@@ -428,7 +501,7 @@ class BrowserActivity : AppCompatActivity() {
   }
 
   private fun addHistory(title: String, url: String) {
-    if (url.isBlank()) return
+    if (url.isBlank() || url == "about:blank") return
     val item = "${title.ifBlank { url }}|$url"
     val deduped = LinkedHashSet<String>()
     deduped.add(item)
@@ -486,12 +559,20 @@ class BrowserActivity : AppCompatActivity() {
 
   override fun dispatchTouchEvent(event: MotionEvent): Boolean {
     if (::stage.isInitialized && ::pointer.isInitialized) {
-      when (event.actionMasked) {
-        MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE, MotionEvent.ACTION_UP -> {
+      if (isInsideView(addressBar, event.rawX.toInt(), event.rawY.toInt())) {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN || event.actionMasked == MotionEvent.ACTION_UP) {
+          focusAddressBar(true)
+        }
+        return super.dispatchTouchEvent(event)
+      }
+
+      if (event.actionMasked == MotionEvent.ACTION_DOWN || event.actionMasked == MotionEvent.ACTION_MOVE || event.actionMasked == MotionEvent.ACTION_UP) {
+        if (isInsideView(webView, event.rawX.toInt(), event.rawY.toInt())) {
+          pointer.visibility = TextView.VISIBLE
           pointerX = (event.x - pointer.width / 2f).coerceIn(0f, (stage.width - pointer.width).toFloat())
           pointerY = (event.y - pointer.height / 2f).coerceIn(0f, (stage.height - pointer.height).toFloat())
           updatePointerPosition()
-          if (event.actionMasked == MotionEvent.ACTION_MOVE) maybeScrollWebPageAtPointer()
+          autoScrollWebAtPointerEdges(0)
         }
       }
     }
@@ -500,139 +581,141 @@ class BrowserActivity : AppCompatActivity() {
 
   override fun dispatchKeyEvent(event: KeyEvent): Boolean {
     if (event.action == KeyEvent.ACTION_DOWN) {
-      when (event.keyCode) {
+      if (currentFocus == addressBar) {
+        return super.dispatchKeyEvent(event)
+      }
+      return when (event.keyCode) {
         KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE -> {
           goBackOrClose()
-          return true
+          true
         }
-        KeyEvent.KEYCODE_DPAD_UP -> {
-          if (currentFocus != addressBar) {
-            movePointer(0, -1)
-            return true
-          }
-        }
-        KeyEvent.KEYCODE_DPAD_DOWN -> {
-          if (currentFocus != addressBar) {
-            movePointer(0, 1)
-            return true
-          }
-        }
-        KeyEvent.KEYCODE_DPAD_LEFT -> {
-          if (currentFocus != addressBar) {
-            movePointer(-1, 0)
-            return true
-          }
-        }
-        KeyEvent.KEYCODE_DPAD_RIGHT -> {
-          if (currentFocus != addressBar) {
-            movePointer(1, 0)
-            return true
-          }
-        }
-        KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
-          if (currentFocus != addressBar) {
-            clickPointerTarget()
-            return true
-          }
-        }
-        KeyEvent.KEYCODE_MENU -> {
-          webView.requestFocus()
-          showStatus("Pointer mode: arrows move pointer, OK clicks the web page.")
-          return true
-        }
+        KeyEvent.KEYCODE_DPAD_UP -> { movePointer(0, -1); true }
+        KeyEvent.KEYCODE_DPAD_DOWN -> { movePointer(0, 1); true }
+        KeyEvent.KEYCODE_DPAD_LEFT -> { movePointer(-1, 0); true }
+        KeyEvent.KEYCODE_DPAD_RIGHT -> { movePointer(1, 0); true }
+        KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> { clickAtPointer(); true }
+        KeyEvent.KEYCODE_MENU -> { focusAddressBar(true); true }
+        else -> super.dispatchKeyEvent(event)
       }
     }
     return super.dispatchKeyEvent(event)
   }
 
   private fun movePointer(dx: Int, dy: Int) {
-    val step = dp(42).toFloat()
-    pointerX = (pointerX + dx * step).coerceIn(0f, (stage.width - pointer.width).toFloat())
-    pointerY = (pointerY + dy * step).coerceIn(0f, (stage.height - pointer.height).toFloat())
+    focusWebPage()
+    val step = dp(54).toFloat()
+    val maxX = (stage.width - pointer.width).coerceAtLeast(0).toFloat()
+    val maxY = (stage.height - pointer.height).coerceAtLeast(0).toFloat()
+    pointerX = (pointerX + dx * step).coerceIn(0f, maxX)
+    pointerY = (pointerY + dy * step).coerceIn(0f, maxY)
+    keepPointerNearWebArea()
     updatePointerPosition()
-    maybeScrollWebPageAtPointer()
-    val button = buttonUnderPointer()
-    showStatus(if (button != null) "Pointer over: ${button.text}" else "Pointer inside page. OK clicks, top/bottom edge scrolls.")
+    val scrolled = autoScrollWebAtPointerEdges(dy)
+    showStatus(if (scrolled) "Pointer edge scrolling page" else "Pointer moved. OK clicks web page.")
+  }
+
+  private fun clickAtPointer() {
+    if (isPointerOverAddressBar()) {
+      focusAddressBar(true)
+      return
+    }
+
+    val local = pointerLocalToWeb() ?: run {
+      showStatus("Move pointer inside the web page")
+      return
+    }
+    val now = SystemClock.uptimeMillis()
+    val down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, local.first, local.second, 0)
+    val up = MotionEvent.obtain(now, now + 80, MotionEvent.ACTION_UP, local.first, local.second, 0)
+    webView.dispatchTouchEvent(down)
+    webView.dispatchTouchEvent(up)
+    down.recycle()
+    up.recycle()
+    showStatus("Clicked web page at pointer")
+  }
+
+  private fun pointerLocalToWeb(): Pair<Float, Float>? {
+    val stageLoc = IntArray(2)
+    val webLoc = IntArray(2)
+    stage.getLocationOnScreen(stageLoc)
+    webView.getLocationOnScreen(webLoc)
+    val centerXScreen = stageLoc[0] + pointerX + pointer.width / 2f
+    val centerYScreen = stageLoc[1] + pointerY + pointer.height / 2f
+    val localX = centerXScreen - webLoc[0]
+    val localY = centerYScreen - webLoc[1]
+    if (localX < 0 || localY < 0 || localX > webView.width || localY > webView.height) return null
+    return Pair(localX, localY)
+  }
+
+  private fun autoScrollWebAtPointerEdges(dy: Int): Boolean {
+    val rect = webRectOnStage()
+    if (rect.height() <= 0) return false
+    val edge = dp(54)
+    val centerY = (pointerY + pointer.height / 2f).toInt()
+    val nearTop = centerY <= rect.top + edge
+    val nearBottom = centerY >= rect.bottom - edge
+    val scrollAmount = dp(150)
+
+    return when {
+      (dy < 0 || nearTop) && nearTop && webView.scrollY > 0 -> {
+        webView.scrollBy(0, -scrollAmount)
+        pointerY = (rect.top + edge + 4).toFloat()
+        updatePointerPosition()
+        true
+      }
+      (dy > 0 || nearBottom) && nearBottom -> {
+        webView.scrollBy(0, scrollAmount)
+        pointerY = (rect.bottom - edge - pointer.height - 4).toFloat().coerceAtLeast(rect.top.toFloat())
+        updatePointerPosition()
+        true
+      }
+      else -> false
+    }
+  }
+
+  private fun keepPointerNearWebArea() {
+    val rect = webRectOnStage()
+    val minY = rect.top.toFloat()
+    val maxY = (rect.bottom - pointer.height).coerceAtLeast(rect.top).toFloat()
+    if (pointerY < minY) pointerY = minY
+    if (pointerY > maxY) pointerY = maxY
+  }
+
+  private fun placePointerInWebPage() {
+    val rect = webRectOnStage()
+    pointerX = (rect.left + rect.width() * 0.50f - pointer.width / 2f).coerceIn(0f, (stage.width - pointer.width).toFloat())
+    pointerY = (rect.top + rect.height() * 0.50f - pointer.height / 2f).coerceIn(0f, (stage.height - pointer.height).toFloat())
+    updatePointerPosition()
+  }
+
+  private fun webRectOnStage(): Rect {
+    val stageLoc = IntArray(2)
+    val webLoc = IntArray(2)
+    stage.getLocationOnScreen(stageLoc)
+    webView.getLocationOnScreen(webLoc)
+    val left = webLoc[0] - stageLoc[0]
+    val top = webLoc[1] - stageLoc[1]
+    return Rect(left, top, left + webView.width, top + webView.height)
+  }
+
+  private fun isPointerOverAddressBar(): Boolean {
+    val stageLoc = IntArray(2)
+    stage.getLocationOnScreen(stageLoc)
+    val px = (stageLoc[0] + pointerX + pointer.width / 2f).toInt()
+    val py = (stageLoc[1] + pointerY + pointer.height / 2f).toInt()
+    return isInsideView(addressBar, px, py)
+  }
+
+  private fun isInsideView(view: android.view.View, screenX: Int, screenY: Int): Boolean {
+    val rect = Rect()
+    view.getGlobalVisibleRect(rect)
+    return rect.contains(screenX, screenY)
   }
 
   private fun updatePointerPosition() {
     pointer.x = pointerX
     pointer.y = pointerY
     pointer.bringToFront()
-  }
-
-  private fun maybeScrollWebPageAtPointer() {
-    val rect = webRectOnStage()
-    val cx = pointerX + pointer.width / 2f
-    val cy = pointerY + pointer.height / 2f
-    if (cx < rect.left || cx > rect.right || cy < rect.top || cy > rect.bottom) return
-
-    val edge = dp(44)
-    when {
-      cy <= rect.top + edge -> {
-        webView.scrollBy(0, -dp(120))
-        showStatus("Web page scroll up")
-      }
-      cy >= rect.bottom - edge -> {
-        webView.scrollBy(0, dp(120))
-        showStatus("Web page scroll down")
-      }
-    }
-  }
-
-  private fun clickPointerTarget() {
-    val button = buttonUnderPointer()
-    if (button != null) {
-      button.performClick()
-      return
-    }
-
-    val webRect = webRectOnStage()
-    val centerX = pointerX + pointer.width / 2f
-    val centerY = pointerY + pointer.height / 2f
-    if (centerX < webRect.left || centerX > webRect.right || centerY < webRect.top || centerY > webRect.bottom) {
-      showStatus("Move pointer inside the web page or over a browser button.")
-      return
-    }
-
-    val localX = centerX - webRect.left
-    val localY = centerY - webRect.top
-    tapWebView(localX, localY)
-    showStatus("Clicked web page at pointer")
-  }
-
-  private fun tapWebView(localX: Float, localY: Float) {
-    val downTime = SystemClock.uptimeMillis()
-    val down = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, localX, localY, 0)
-    val up = MotionEvent.obtain(downTime, SystemClock.uptimeMillis() + 80, MotionEvent.ACTION_UP, localX, localY, 0)
-    webView.dispatchTouchEvent(down)
-    webView.dispatchTouchEvent(up)
-    down.recycle()
-    up.recycle()
-  }
-
-  private fun buttonUnderPointer(): Button? {
-    if (!::stage.isInitialized || !::pointer.isInitialized) return null
-    val stageLocation = IntArray(2)
-    stage.getLocationOnScreen(stageLocation)
-    val px = (stageLocation[0] + pointer.x + pointer.width / 2).toInt()
-    val py = (stageLocation[1] + pointer.y + pointer.height / 2).toInt()
-    val rect = android.graphics.Rect()
-    for (button in browserButtons) {
-      button.getGlobalVisibleRect(rect)
-      if (rect.contains(px, py)) return button
-    }
-    return null
-  }
-
-  private fun webRectOnStage(): android.graphics.RectF {
-    val stageLocation = IntArray(2)
-    val webLocation = IntArray(2)
-    stage.getLocationOnScreen(stageLocation)
-    webView.getLocationOnScreen(webLocation)
-    val left = (webLocation[0] - stageLocation[0]).toFloat()
-    val top = (webLocation[1] - stageLocation[1]).toFloat()
-    return android.graphics.RectF(left, top, left + webView.width, top + webView.height)
   }
 
   private fun buttonBg(focused: Boolean): GradientDrawable {
