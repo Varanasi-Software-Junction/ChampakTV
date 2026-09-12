@@ -55,6 +55,7 @@ class BrowserActivity : AppCompatActivity() {
     private const val KEY_BOOKMARKS = "bookmarks"
     private const val KEY_HISTORY = "history"
     private const val HOME_URL = "https://www.learnwithchampak.live"
+    private const val DESKTOP_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
   }
 
   private val tag = "ChampakTVBrowser"
@@ -313,6 +314,7 @@ class BrowserActivity : AppCompatActivity() {
       mediaPlaybackRequiresUserGesture = false
       allowFileAccess = true
       allowContentAccess = true
+      userAgentString = DESKTOP_USER_AGENT
     }
 
     webView.setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
@@ -326,6 +328,7 @@ class BrowserActivity : AppCompatActivity() {
           openExternalUrl(target)
           return true
         }
+        view.settings.userAgentString = DESKTOP_USER_AGENT
         view.loadUrl(target)
         return true
       }
@@ -336,6 +339,7 @@ class BrowserActivity : AppCompatActivity() {
           openExternalUrl(url)
           return true
         }
+        view.settings.userAgentString = DESKTOP_USER_AGENT
         view.loadUrl(url)
         return true
       }
@@ -345,7 +349,7 @@ class BrowserActivity : AppCompatActivity() {
         titleText.text = if (url == "about:blank") "Blank Browser" else title
         if (url == "about:blank") addressBar.setText("") else addressBar.setText(url)
         if (url != "about:blank") addHistory(title, url)
-        showStatus("Pointer active. Long-press OK for menu; Search key returns to buttons.")
+        showStatus("Desktop page mode. Pointer is synced. Long-press OK for menu.")
         progress.progress = 0
       }
 
@@ -401,7 +405,8 @@ class BrowserActivity : AppCompatActivity() {
   private fun loadAddress(input: String) {
     val target = normalizeUrl(input)
     addressBar.setText(if (target == "about:blank") "" else target)
-    showStatus("Opening: $target")
+    showStatus("Opening in desktop mode: $target")
+    webView.settings.userAgentString = DESKTOP_USER_AGENT
     webView.loadUrl(target)
     focusWebPage()
   }
@@ -445,6 +450,7 @@ class BrowserActivity : AppCompatActivity() {
     webView.requestFocus()
     pointer.visibility = View.VISIBLE
     pointer.bringToFront()
+    syncPointerModelFromView()
     showStatus("Web page mode. Long-press OK for menu; Search key returns to buttons.")
   }
 
@@ -709,23 +715,26 @@ class BrowserActivity : AppCompatActivity() {
   }
 
   private fun movePointer(dx: Int, dy: Int) {
+    syncPointerModelFromView()
+
     if (dy < 0 && pointerAtVeryTopOfWeb()) {
       focusToolbar()
       return
     }
 
-    val step = dp(32).toFloat()
+    val step = dp(24).toFloat()
     val maxX = (stage.width - pointer.width).coerceAtLeast(0).toFloat()
     val maxY = (stage.height - pointer.height).coerceAtLeast(0).toFloat()
     pointerX = (pointerX + dx * step).coerceIn(0f, maxX)
     pointerY = (pointerY + dy * step).coerceIn(0f, maxY)
     keepPointerNearWebArea()
-    updatePointerPosition(true)
+    updatePointerPosition(false)
     val scrolled = autoScrollWebAtPointerEdges(dy)
-    showStatus(if (scrolled) "Scrolling opened web page" else "Pointer moved. Long-press OK for menu.")
+    showStatus(if (scrolled) "Scrolling desktop web page" else "Pointer synced. Long-press OK for menu.")
   }
 
   private fun clickAtPointer() {
+    syncPointerModelFromView()
     if (isPointerOverAddressBar()) {
       focusAddressBar(true)
       return
@@ -750,8 +759,8 @@ class BrowserActivity : AppCompatActivity() {
     val webLoc = IntArray(2)
     stage.getLocationOnScreen(stageLoc)
     webView.getLocationOnScreen(webLoc)
-    val centerXScreen = stageLoc[0] + pointerX + pointer.width / 2f
-    val centerYScreen = stageLoc[1] + pointerY + pointer.height / 2f
+    val centerXScreen = stageLoc[0] + pointer.x + pointer.width / 2f
+    val centerYScreen = stageLoc[1] + pointer.y + pointer.height / 2f
     val localX = centerXScreen - webLoc[0]
     val localY = centerYScreen - webLoc[1]
     if (localX < 0 || localY < 0 || localX > webView.width || localY > webView.height) return null
@@ -761,6 +770,7 @@ class BrowserActivity : AppCompatActivity() {
   private fun autoScrollWebAtPointerEdges(dy: Int): Boolean {
     val rect = webRectOnStage()
     if (rect.height() <= 0) return false
+    syncPointerModelFromView()
     val edge = dp(72)
     val centerY = (pointerY + pointer.height / 2f).toInt()
     val nearTop = centerY <= rect.top + edge
@@ -771,13 +781,13 @@ class BrowserActivity : AppCompatActivity() {
       (dy < 0 || nearTop) && nearTop -> {
         performPageScroll(-scrollAmount)
         pointerY = (rect.top + edge + 8).toFloat().coerceAtMost((rect.bottom - pointer.height).toFloat())
-        updatePointerPosition(true)
+        updatePointerPosition(false)
         true
       }
       (dy > 0 || nearBottom) && nearBottom -> {
         performPageScroll(scrollAmount)
         pointerY = (rect.bottom - edge - pointer.height - 8).toFloat().coerceAtLeast(rect.top.toFloat())
-        updatePointerPosition(true)
+        updatePointerPosition(false)
         true
       }
       else -> false
@@ -810,7 +820,7 @@ class BrowserActivity : AppCompatActivity() {
 
   private fun pointerAtVeryTopOfWeb(): Boolean {
     val rect = webRectOnStage()
-    val centerY = pointerY + pointer.height / 2f
+    val centerY = pointer.y + pointer.height / 2f
     return centerY <= rect.top + dp(38)
   }
 
@@ -842,8 +852,8 @@ class BrowserActivity : AppCompatActivity() {
   private fun isPointerOverAddressBar(): Boolean {
     val stageLoc = IntArray(2)
     stage.getLocationOnScreen(stageLoc)
-    val px = (stageLoc[0] + pointerX + pointer.width / 2f).toInt()
-    val py = (stageLoc[1] + pointerY + pointer.height / 2f).toInt()
+    val px = (stageLoc[0] + pointer.x + pointer.width / 2f).toInt()
+    val py = (stageLoc[1] + pointer.y + pointer.height / 2f).toInt()
     return isInsideView(addressBar, px, py)
   }
 
@@ -853,14 +863,17 @@ class BrowserActivity : AppCompatActivity() {
     return rect.contains(screenX, screenY)
   }
 
+  private fun syncPointerModelFromView() {
+    if (::pointer.isInitialized) {
+      pointerX = pointer.x
+      pointerY = pointer.y
+    }
+  }
+
   private fun updatePointerPosition(animated: Boolean) {
     pointer.animate().cancel()
-    if (animated) {
-      pointer.animate().x(pointerX).y(pointerY).setDuration(95).start()
-    } else {
-      pointer.x = pointerX
-      pointer.y = pointerY
-    }
+    pointer.x = pointerX
+    pointer.y = pointerY
     pointer.bringToFront()
   }
 
