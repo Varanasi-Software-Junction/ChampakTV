@@ -6,7 +6,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.ActivityInfo
-import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.Typeface
@@ -17,11 +16,11 @@ import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import android.util.Base64
 import android.util.Log
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.webkit.CookieManager
@@ -41,9 +40,6 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import java.io.BufferedReader
-import java.io.InputStreamReader
-import java.net.URL
 import java.net.URLEncoder
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -58,10 +54,10 @@ class BrowserActivity : AppCompatActivity() {
     private const val PREFS = "champak_browser_prefs"
     private const val KEY_BOOKMARKS = "bookmarks"
     private const val KEY_HISTORY = "history"
+    private const val HOME_URL = "https://www.learnwithchampak.live"
   }
 
   private val tag = "ChampakTVBrowser"
-  private val homeUrl = "https://www.learnwithchampak.live"
   private lateinit var stage: FrameLayout
   private lateinit var webView: WebView
   private lateinit var pointer: TextView
@@ -77,6 +73,7 @@ class BrowserActivity : AppCompatActivity() {
   private var pointerX = 0f
   private var pointerY = 0f
   private var lastEdgeScrollAt = 0L
+  private var toolbarMode = false
 
   private val clockRunnable = object : Runnable {
     override fun run() {
@@ -92,7 +89,8 @@ class BrowserActivity : AppCompatActivity() {
       requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
     }
 
-    val rawStartUrl = intent.getStringExtra(EXTRA_URL).orEmpty()
+    val incomingUrl = intent?.data?.toString().orEmpty()
+    val rawStartUrl = incomingUrl.ifBlank { intent.getStringExtra(EXTRA_URL).orEmpty() }
     val startTitle = intent.getStringExtra(EXTRA_TITLE) ?: "Champak Browser"
     val openBlank = rawStartUrl.isBlank() || rawStartUrl == "about:blank"
 
@@ -145,22 +143,21 @@ class BrowserActivity : AppCompatActivity() {
     }
     topBar.addView(buttonRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(48)))
 
-    val brandIcon = ImageView(this).apply {
-      contentDescription = "Learn With Champak"
+    val logo = ImageView(this).apply {
+      setImageResource(R.drawable.champak_installer_icon)
+      adjustViewBounds = true
       scaleType = ImageView.ScaleType.CENTER_CROP
-      background = rounded(Color.WHITE, dp(12), Color.rgb(255, 221, 128), dp(2))
+      background = solid(Color.WHITE, dp(13))
       setPadding(dp(3), dp(3), dp(3), dp(3))
-      elevation = dp(8).toFloat()
-      isClickable = true
       isFocusable = true
       isFocusableInTouchMode = true
-      loadBrandIconInto(this)
-      setOnClickListener { loadAddress(homeUrl) }
+      contentDescription = "Open Learn With Champak"
+      setOnClickListener { loadAddress(HOME_URL) }
       setOnFocusChangeListener { view, hasFocus ->
         view.animate().scaleX(if (hasFocus) 1.08f else 1f).scaleY(if (hasFocus) 1.08f else 1f).setDuration(100).start()
       }
     }
-    buttonRow.addView(brandIcon, LinearLayout.LayoutParams(dp(46), dp(44)).apply { rightMargin = dp(6) })
+    buttonRow.addView(logo, LinearLayout.LayoutParams(dp(46), dp(44)))
 
     buttonRow.addView(toolbarButton("←", "Back") { goBackOrClose() }, LinearLayout.LayoutParams(0, dp(44), 1f))
     buttonRow.addView(toolbarButton("→", "Forward") { if (webView.canGoForward()) webView.goForward() else showStatus("No forward page") }, LinearLayout.LayoutParams(0, dp(44), 1f))
@@ -204,7 +201,7 @@ class BrowserActivity : AppCompatActivity() {
       }
     }
     addressRow.addView(addressBar, LinearLayout.LayoutParams(0, dp(48), 1f))
-    addressRow.addView(toolbarButton("▶", "Go") { loadAddress(addressBar.text.toString()) }, LinearLayout.LayoutParams(dp(if (phoneMode) 58 else 70), dp(48)))
+    addressRow.addView(toolbarButton("▶", "Go") { loadAddress(addressBar.text.toString()) }, LinearLayout.LayoutParams(dp(if (phoneMode) 62 else 82), dp(48)))
 
     val browserRow = LinearLayout(this).apply {
       orientation = LinearLayout.HORIZONTAL
@@ -267,7 +264,7 @@ class BrowserActivity : AppCompatActivity() {
     root.addView(webView, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
 
     statusText = TextView(this).apply {
-      text = "Icon toolbar active. Champak image opens Learn With Champak."
+      text = "Search key returns to browser buttons. Menu opens keyboard."
       textSize = if (phoneMode) 12f else 14f
       setTextColor(Color.rgb(218, 240, 255))
       gravity = Gravity.CENTER_VERTICAL
@@ -345,7 +342,7 @@ class BrowserActivity : AppCompatActivity() {
         titleText.text = if (url == "about:blank") "Blank Browser" else title
         if (url == "about:blank") addressBar.setText("") else addressBar.setText(url)
         if (url != "about:blank") addHistory(title, url)
-        showStatus("Pointer active. Edge contact scrolls opened web pages.")
+        showStatus("Pointer active. Search key returns to browser buttons.")
         progress.progress = 0
       }
 
@@ -370,7 +367,7 @@ class BrowserActivity : AppCompatActivity() {
     return Button(this).apply {
       text = icon
       contentDescription = description
-      textSize = 20f
+      textSize = 22f
       isAllCaps = false
       setTextColor(Color.WHITE)
       typeface = Typeface.DEFAULT_BOLD
@@ -381,7 +378,7 @@ class BrowserActivity : AppCompatActivity() {
 
       setOnFocusChangeListener { view, hasFocus ->
         background = buttonBg(hasFocus)
-        view.animate().scaleX(if (hasFocus) 1.04f else 1f).scaleY(if (hasFocus) 1.04f else 1f).setDuration(100).start()
+        view.animate().scaleX(if (hasFocus) 1.06f else 1f).scaleY(if (hasFocus) 1.06f else 1f).setDuration(100).start()
         if (hasFocus) showStatus(description)
       }
 
@@ -400,7 +397,7 @@ class BrowserActivity : AppCompatActivity() {
 
   private fun loadAddress(input: String) {
     val target = normalizeUrl(input)
-    addressBar.setText(target)
+    addressBar.setText(if (target == "about:blank") "" else target)
     showStatus("Opening: $target")
     webView.loadUrl(target)
     focusWebPage()
@@ -416,11 +413,12 @@ class BrowserActivity : AppCompatActivity() {
   }
 
   private fun focusAddressBar(openKeyboard: Boolean) {
+    toolbarMode = false
     addressBar.isFocusableInTouchMode = true
     addressBar.requestFocus()
     addressBar.requestFocusFromTouch()
     addressBar.setSelection(addressBar.text.length)
-    pointer.visibility = TextView.GONE
+    pointer.visibility = View.GONE
     if (openKeyboard) showKeyboard()
     showStatus("Keyboard ready. Type address/search and press Go.")
   }
@@ -436,12 +434,23 @@ class BrowserActivity : AppCompatActivity() {
   }
 
   private fun focusWebPage() {
+    toolbarMode = false
     hideKeyboard()
     addressBar.clearFocus()
     webView.requestFocus()
-    pointer.visibility = TextView.VISIBLE
+    pointer.visibility = View.VISIBLE
     pointer.bringToFront()
-    showStatus("Page focused. Arrows move pointer smoothly; OK clicks; edges scroll.")
+    showStatus("Web page mode. Search key returns to buttons; Menu opens keyboard.")
+  }
+
+  private fun focusToolbar() {
+    toolbarMode = true
+    hideKeyboard()
+    addressBar.clearFocus()
+    pointer.visibility = View.GONE
+    val target = browserButtons.firstOrNull()
+    if (target != null) target.requestFocus() else stage.requestFocus()
+    showStatus("Button mode. Use arrows to choose icons. Press Page icon to return to web page.")
   }
 
   private fun goBackOrClose() {
@@ -582,7 +591,8 @@ class BrowserActivity : AppCompatActivity() {
 
       if (event.actionMasked == MotionEvent.ACTION_DOWN || event.actionMasked == MotionEvent.ACTION_MOVE || event.actionMasked == MotionEvent.ACTION_UP) {
         if (isInsideView(webView, event.rawX.toInt(), event.rawY.toInt())) {
-          pointer.visibility = TextView.VISIBLE
+          toolbarMode = false
+          pointer.visibility = View.VISIBLE
           pointerX = (event.x - pointer.width / 2f).coerceIn(0f, (stage.width - pointer.width).toFloat())
           pointerY = (event.y - pointer.height / 2f).coerceIn(0f, (stage.height - pointer.height).toFloat())
           updatePointerPosition(false)
@@ -596,6 +606,20 @@ class BrowserActivity : AppCompatActivity() {
   override fun dispatchKeyEvent(event: KeyEvent): Boolean {
     if (event.action == KeyEvent.ACTION_DOWN) {
       if (currentFocus == addressBar) return super.dispatchKeyEvent(event)
+
+      if (event.keyCode == KeyEvent.KEYCODE_MENU) {
+        focusAddressBar(true)
+        return true
+      }
+      if (event.keyCode == KeyEvent.KEYCODE_SEARCH || event.keyCode == KeyEvent.KEYCODE_GUIDE) {
+        focusToolbar()
+        return true
+      }
+
+      if (toolbarMode) {
+        return super.dispatchKeyEvent(event)
+      }
+
       return when (event.keyCode) {
         KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE -> { goBackOrClose(); true }
         KeyEvent.KEYCODE_DPAD_UP -> { movePointer(0, -1); true }
@@ -603,7 +627,6 @@ class BrowserActivity : AppCompatActivity() {
         KeyEvent.KEYCODE_DPAD_LEFT -> { movePointer(-1, 0); true }
         KeyEvent.KEYCODE_DPAD_RIGHT -> { movePointer(1, 0); true }
         KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> { clickAtPointer(); true }
-        KeyEvent.KEYCODE_MENU -> { focusAddressBar(true); true }
         else -> super.dispatchKeyEvent(event)
       }
     }
@@ -611,7 +634,11 @@ class BrowserActivity : AppCompatActivity() {
   }
 
   private fun movePointer(dx: Int, dy: Int) {
-    focusWebPage()
+    if (dy < 0 && pointerAtVeryTopOfWeb()) {
+      focusToolbar()
+      return
+    }
+
     val step = dp(32).toFloat()
     val maxX = (stage.width - pointer.width).coerceAtLeast(0).toFloat()
     val maxY = (stage.height - pointer.height).coerceAtLeast(0).toFloat()
@@ -620,7 +647,7 @@ class BrowserActivity : AppCompatActivity() {
     keepPointerNearWebArea()
     updatePointerPosition(true)
     val scrolled = autoScrollWebAtPointerEdges(dy)
-    showStatus(if (scrolled) "Scrolling opened web page" else "Pointer moved smoothly. OK clicks web page.")
+    showStatus(if (scrolled) "Scrolling opened web page" else "Pointer moved. Search key returns to buttons.")
   }
 
   private fun clickAtPointer() {
@@ -630,7 +657,7 @@ class BrowserActivity : AppCompatActivity() {
     }
 
     val local = pointerLocalToWeb() ?: run {
-      showStatus("Move pointer inside the web page")
+      showStatus("Move pointer inside the web page, or press Search for buttons")
       return
     }
     val now = SystemClock.uptimeMillis()
@@ -706,6 +733,12 @@ class BrowserActivity : AppCompatActivity() {
     webView.evaluateJavascript(js, null)
   }
 
+  private fun pointerAtVeryTopOfWeb(): Boolean {
+    val rect = webRectOnStage()
+    val centerY = pointerY + pointer.height / 2f
+    return centerY <= rect.top + dp(38)
+  }
+
   private fun keepPointerNearWebArea() {
     val rect = webRectOnStage()
     val minY = rect.top.toFloat()
@@ -739,7 +772,7 @@ class BrowserActivity : AppCompatActivity() {
     return isInsideView(addressBar, px, py)
   }
 
-  private fun isInsideView(view: android.view.View, screenX: Int, screenY: Int): Boolean {
+  private fun isInsideView(view: View, screenX: Int, screenY: Int): Boolean {
     val rect = Rect()
     view.getGlobalVisibleRect(rect)
     return rect.contains(screenX, screenY)
@@ -756,36 +789,6 @@ class BrowserActivity : AppCompatActivity() {
     pointer.bringToFront()
   }
 
-  private fun loadBrandIconInto(imageView: ImageView) {
-    try {
-      val bitmap = BitmapFactory.decodeStream(assets.open("champak-photo.png"))
-      if (bitmap != null) {
-        imageView.setImageBitmap(bitmap)
-        return
-      }
-    } catch (_: Exception) { }
-
-    try {
-      val encoded = BufferedReader(InputStreamReader(assets.open("champak_photo.b64"))).readText().replace("\n", "").trim()
-      val bytes = Base64.decode(encoded, Base64.DEFAULT)
-      val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-      if (bitmap != null) {
-        imageView.setImageBitmap(bitmap)
-        return
-      }
-    } catch (_: Exception) { }
-
-    imageView.setBackgroundColor(Color.rgb(12, 84, 130))
-    Thread {
-      try {
-        val bitmap = BitmapFactory.decodeStream(URL("https://programmer-s-picnic.github.io/json-images/tv/champak-photo.png").openStream())
-        if (bitmap != null) runOnUiThread { imageView.setImageBitmap(bitmap) }
-      } catch (ex: Exception) {
-        Log.e(tag, "Could not load browser brand icon", ex)
-      }
-    }.start()
-  }
-
   private fun buttonBg(focused: Boolean): GradientDrawable {
     val colors = if (focused) {
       intArrayOf(Color.rgb(255, 168, 37), Color.rgb(255, 111, 0))
@@ -795,14 +798,6 @@ class BrowserActivity : AppCompatActivity() {
     return GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, colors).apply {
       cornerRadius = dp(14).toFloat()
       setStroke(dp(if (focused) 3 else 1), if (focused) Color.WHITE else Color.rgb(82, 204, 255))
-    }
-  }
-
-  private fun rounded(color: Int, radius: Int, strokeColor: Int, strokeWidth: Int): GradientDrawable {
-    return GradientDrawable().apply {
-      setColor(color)
-      cornerRadius = radius.toFloat()
-      if (strokeWidth > 0) setStroke(strokeWidth, strokeColor)
     }
   }
 
