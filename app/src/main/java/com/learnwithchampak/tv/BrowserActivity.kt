@@ -8,6 +8,7 @@ import android.content.pm.ActivityInfo
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
+import android.os.Message
 import android.provider.Settings
 import android.view.Gravity
 import android.view.KeyEvent
@@ -39,13 +40,15 @@ class BrowserActivity : AppCompatActivity() {
     const val EXTRA_URL = "com.learnwithchampak.tv.EXTRA_URL"
     const val EXTRA_TITLE = "com.learnwithchampak.tv.EXTRA_TITLE"
     private const val HOME_URL = "https://www.learnwithchampak.live"
+    private const val GOOGLE_SIGN_IN_URL = "https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Fwww.google.com%2F&hl=en"
+    private const val GOOGLE_HOME_URL = "https://www.google.com"
     private const val APK_URL = "https://programmer-s-picnic.github.io/json-images/tv/champak-tv.apk"
     private const val PREFS = "champak_tabs_prefs"
     private const val KEY_DEFAULT_ASKED = "default_asked_browser"
     private const val KEY_BOOKMARKS = "browser_bookmarks"
     private const val KEY_HISTORY = "browser_history"
     private const val MAX_HISTORY = 80
-    private const val DESKTOP_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    private const val DESKTOP_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
   }
 
   private data class BrowserTab(val webView: WebView, var title: String, var url: String)
@@ -70,6 +73,8 @@ class BrowserActivity : AppCompatActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    CookieManager.getInstance().setAcceptCookie(true)
+    CookieManager.getInstance().flush()
     if (resources.configuration.screenWidthDp >= 700) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
     buildUi()
     val startUrl = intent?.data?.toString().orEmpty().ifBlank { intent.getStringExtra(EXTRA_URL).orEmpty() }.ifBlank { HOME_URL }
@@ -77,7 +82,13 @@ class BrowserActivity : AppCompatActivity() {
     askDefaultBrowserOnFirstRun()
   }
 
+  override fun onPause() {
+    CookieManager.getInstance().flush()
+    super.onPause()
+  }
+
   override fun onDestroy() {
+    CookieManager.getInstance().flush()
     tabs.forEach { it.webView.destroy() }
     super.onDestroy()
   }
@@ -126,7 +137,7 @@ class BrowserActivity : AppCompatActivity() {
     nav.addView(btn("⌂", "Home") { loadInCurrent(HOME_URL) })
 
     addressBar = AutoCompleteTextView(this).apply {
-      hint = "Type website/search or saved link • OK shows saved links"
+      hint = "Type website/search/saved link • G opens Google sign-in"
       threshold = 1
       setSingleLine(true)
       textSize = 14f
@@ -170,6 +181,7 @@ class BrowserActivity : AppCompatActivity() {
     tools.addView(btn("First", "Return to first app screen") { returnToFirstScreen() }, LinearLayout.LayoutParams(0, -1, 1f))
     tools.addView(btn("Page", "Focus web page") { focusWebPage() }, LinearLayout.LayoutParams(0, -1, 1f))
     tools.addView(btn("Keys", "Open keyboard") { focusAddressBar() }, LinearLayout.LayoutParams(0, -1, 1f))
+    tools.addView(btn("G", "Google sign-in inside") { openGoogleSignInInside() }, LinearLayout.LayoutParams(0, -1, 1f))
     tools.addView(btn("★", "Add bookmark") { addCurrentBookmark() }, LinearLayout.LayoutParams(0, -1, 1f))
     tools.addView(btn("☆", "Bookmarks") { showBookmarks() }, LinearLayout.LayoutParams(0, -1, 1f))
     tools.addView(btn("◷", "Visited") { showVisitedLinks() }, LinearLayout.LayoutParams(0, -1, 1f))
@@ -232,24 +244,33 @@ class BrowserActivity : AppCompatActivity() {
     return WebView(this).apply {
       isFocusable = true
       isFocusableInTouchMode = true
-      settings.javaScriptEnabled = true
-      settings.domStorageEnabled = true
-      settings.databaseEnabled = true
-      settings.loadsImagesAutomatically = true
-      settings.loadWithOverviewMode = true
-      settings.useWideViewPort = true
-      settings.builtInZoomControls = true
-      settings.displayZoomControls = false
-      settings.cacheMode = WebSettings.LOAD_DEFAULT
-      settings.mediaPlaybackRequiresUserGesture = false
-      settings.userAgentString = DESKTOP_USER_AGENT
-      CookieManager.getInstance().setAcceptCookie(true)
-      CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+      configureWebView(this)
       webChromeClient = object : WebChromeClient() {
         override fun onReceivedTitle(view: WebView, title: String) {
           activeTabFor(view)?.title = title.ifBlank { activeTabFor(view)?.url ?: "Page" }
           if (view == activeWebView()) titleText.text = title.ifBlank { activeTab()?.url ?: "Page" }
           refreshTabs()
+        }
+
+        override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
+          val popup = newWebView()
+          val tab = BrowserTab(popup, "Google sign-in", "about:blank")
+          tabs.add(tab)
+          switchTo(tabs.lastIndex)
+          val transport = resultMsg.obj as WebView.WebViewTransport
+          transport.webView = popup
+          resultMsg.sendToTarget()
+          Toast.makeText(this@BrowserActivity, "Opened sign-in window in a new tab", Toast.LENGTH_SHORT).show()
+          return true
+        }
+
+        override fun onCloseWindow(window: WebView) {
+          val index = tabs.indexOfFirst { it.webView == window }
+          if (index >= 0 && tabs.size > 1) {
+            tabs.removeAt(index)
+            window.destroy()
+            switchTo(currentIndex.coerceAtMost(tabs.lastIndex))
+          }
         }
       }
       webViewClient = object : WebViewClient() {
@@ -265,11 +286,33 @@ class BrowserActivity : AppCompatActivity() {
           activeTabFor(view)?.url = url
           if (view == activeWebView()) addressBar.setText(if (url == "about:blank") "" else url, false)
           addVisitedLink(url)
+          CookieManager.getInstance().flush()
           refreshTabs()
           screen.post { ensurePointerVisible() }
         }
       }
     }
+  }
+
+  private fun configureWebView(web: WebView) {
+    web.settings.javaScriptEnabled = true
+    web.settings.domStorageEnabled = true
+    web.settings.databaseEnabled = true
+    web.settings.loadsImagesAutomatically = true
+    web.settings.loadWithOverviewMode = true
+    web.settings.useWideViewPort = true
+    web.settings.builtInZoomControls = true
+    web.settings.displayZoomControls = false
+    web.settings.cacheMode = WebSettings.LOAD_DEFAULT
+    web.settings.mediaPlaybackRequiresUserGesture = false
+    web.settings.userAgentString = DESKTOP_USER_AGENT
+    web.settings.javaScriptCanOpenWindowsAutomatically = true
+    web.settings.setSupportMultipleWindows(true)
+    web.settings.allowContentAccess = true
+    web.settings.allowFileAccess = true
+    web.settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+    CookieManager.getInstance().setAcceptCookie(true)
+    CookieManager.getInstance().setAcceptThirdPartyCookies(web, true)
   }
 
   private fun newTab(url: String) {
@@ -331,8 +374,10 @@ class BrowserActivity : AppCompatActivity() {
     val url = normalizeUrl(input)
     activeTab()?.url = url
     addressBar.setText(if (url == "about:blank") "" else url, false)
-    activeWebView()?.settings?.userAgentString = DESKTOP_USER_AGENT
-    activeWebView()?.loadUrl(url)
+    activeWebView()?.let {
+      configureWebView(it)
+      it.loadUrl(url)
+    }
   }
 
   private fun normalizeUrl(input: String): String {
@@ -347,8 +392,19 @@ class BrowserActivity : AppCompatActivity() {
   private fun activeWebView(): WebView? = activeTab()?.webView
   private fun activeTabFor(view: WebView): BrowserTab? = tabs.firstOrNull { it.webView == view }
 
-  private fun openGoogleSignIn() {
-    openOutside("https://accounts.google.com/signin")
+  private fun openGoogleSignInInside() {
+    setFullScreenMode(false, false)
+    AlertDialog.Builder(this)
+      .setTitle("Google Sign-In")
+      .setMessage("I will open Google sign-in inside this browser with desktop mode, cookies and pop-ups enabled. If Google still blocks embedded sign-in, use Outside Browser from the next dialog.")
+      .setPositiveButton("Open Inside") { _, _ -> loadInCurrent(GOOGLE_SIGN_IN_URL); focusWebPage() }
+      .setNeutralButton("Google Home") { _, _ -> loadInCurrent(GOOGLE_HOME_URL); focusWebPage() }
+      .setNegativeButton("Outside Browser") { _, _ -> openOutside(GOOGLE_SIGN_IN_URL) }
+      .show()
+  }
+
+  private fun openGoogleSignInOutside() {
+    openOutside(GOOGLE_SIGN_IN_URL)
   }
 
   private fun openOutside(url: String) {
@@ -372,6 +428,8 @@ class BrowserActivity : AppCompatActivity() {
     val combined = mutableListOf<String>()
     combined.addAll(readList(KEY_BOOKMARKS))
     combined.addAll(readList(KEY_HISTORY))
+    combined.add(GOOGLE_SIGN_IN_URL)
+    combined.add(GOOGLE_HOME_URL)
     return combined.distinct().filter { it.isNotBlank() && it != "about:blank" }
   }
 
@@ -456,8 +514,8 @@ class BrowserActivity : AppCompatActivity() {
       .setMessage(
         "Visited links are saved automatically.\n\n" +
           "Move the yellow pointer to the address bar and press OK. Start typing part of a visited link, then choose the matching saved link.\n\n" +
-          "You can also press Go after typing part of a saved link; the browser will open the first matching saved link.\n\n" +
-          "Full URLs, short sites like youtube.com, and normal search words also work."
+          "Type google sign in, accounts.google.com or press G to open Google sign-in.\n\n" +
+          "If Google says this browser is not secure, press Menu and choose Google Sign-In Outside."
       )
       .setPositiveButton("Open Address Bar") { _, _ -> focusAddressBar() }
       .setNegativeButton("Close", null)
@@ -690,6 +748,8 @@ class BrowserActivity : AppCompatActivity() {
       if (fullScreen) "Show Controls" else "Full Screen Web Page",
       "Focus Web Page / Pointer",
       "Open Keyboard / Address Bar",
+      "Google Sign-In Inside",
+      "Google Sign-In Outside",
       "Address Bar Hints",
       "Add Bookmark",
       "Bookmarks",
@@ -710,14 +770,16 @@ class BrowserActivity : AppCompatActivity() {
           2 -> setFullScreenMode(!fullScreen, true)
           3 -> focusWebPage()
           4 -> focusAddressBar()
-          5 -> showAddressHints()
-          6 -> addCurrentBookmark()
-          7 -> showBookmarks()
-          8 -> showVisitedLinks()
-          9 -> goBackOrClose()
-          10 -> loadInCurrent(HOME_URL)
-          11 -> openOutside(activeTab()?.url ?: HOME_URL)
-          12 -> finish()
+          5 -> openGoogleSignInInside()
+          6 -> openGoogleSignInOutside()
+          7 -> showAddressHints()
+          8 -> addCurrentBookmark()
+          9 -> showBookmarks()
+          10 -> showVisitedLinks()
+          11 -> goBackOrClose()
+          12 -> loadInCurrent(HOME_URL)
+          13 -> openOutside(activeTab()?.url ?: HOME_URL)
+          14 -> finish()
         }
       }
       .setOnCancelListener { longPressMenuShown = false }
