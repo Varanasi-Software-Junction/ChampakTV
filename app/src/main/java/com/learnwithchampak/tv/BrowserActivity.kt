@@ -13,6 +13,7 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.webkit.CookieManager
@@ -45,6 +46,7 @@ class BrowserActivity : AppCompatActivity() {
 
   private data class BrowserTab(val webView: WebView, var title: String, var url: String)
 
+  private lateinit var screen: FrameLayout
   private lateinit var root: LinearLayout
   private lateinit var header: LinearLayout
   private lateinit var tabStrip: LinearLayout
@@ -77,10 +79,17 @@ class BrowserActivity : AppCompatActivity() {
   }
 
   private fun buildUi() {
+    screen = FrameLayout(this).apply {
+      setBackgroundColor(Color.rgb(3, 15, 34))
+      isFocusable = true
+      isFocusableInTouchMode = true
+    }
+
     root = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
       setBackgroundColor(Color.rgb(3, 15, 34))
     }
+    screen.addView(root, FrameLayout.LayoutParams(-1, -1))
 
     header = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
@@ -119,7 +128,7 @@ class BrowserActivity : AppCompatActivity() {
       setBackgroundColor(Color.WHITE)
       imeOptions = EditorInfo.IME_ACTION_GO
       setOnFocusChangeListener { _, hasFocus ->
-        pointer.visibility = if (hasFocus) View.GONE else View.VISIBLE
+        pointer.visibility = View.VISIBLE
         if (hasFocus) showKeyboard()
       }
       setOnClickListener { showKeyboard() }
@@ -147,6 +156,8 @@ class BrowserActivity : AppCompatActivity() {
     header.addView(tabStrip, LinearLayout.LayoutParams(-1, dp(34)))
 
     webHolder = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
+    root.addView(webHolder, LinearLayout.LayoutParams(-1, 0, 1f))
+
     pointer = TextView(this).apply {
       text = "●"
       textSize = 34f
@@ -156,21 +167,22 @@ class BrowserActivity : AppCompatActivity() {
       visibility = View.VISIBLE
       isFocusable = false
       isClickable = false
-      elevation = dp(20).toFloat()
+      elevation = dp(50).toFloat()
     }
-    webHolder.setOnClickListener { focusWebPage() }
-    webHolder.setOnTouchListener { _, event ->
-      if (event.action == MotionEvent.ACTION_DOWN || event.action == MotionEvent.ACTION_MOVE) {
+    screen.addView(pointer, FrameLayout.LayoutParams(dp(54), dp(54)))
+
+    screen.setOnTouchListener { _, event ->
+      if (event.action == MotionEvent.ACTION_DOWN || event.action == MotionEvent.ACTION_MOVE || event.action == MotionEvent.ACTION_UP) {
         pointerX = event.x
         pointerY = event.y
-        updatePointerPosition()
-        focusWebPage()
+        ensurePointerVisible()
+        if (event.action == MotionEvent.ACTION_UP) clickAtPointer()
       }
-      false
+      true
     }
-    root.addView(webHolder, LinearLayout.LayoutParams(-1, 0, 1f))
-    setContentView(root)
-    webHolder.post { centerPointer() }
+
+    setContentView(screen)
+    screen.post { centerPointerInWebPage() }
   }
 
   private fun btn(text: String, desc: String, action: () -> Unit): Button =
@@ -227,7 +239,7 @@ class BrowserActivity : AppCompatActivity() {
           activeTabFor(view)?.url = url
           if (view == activeWebView()) addressBar.setText(if (url == "about:blank") "" else url)
           refreshTabs()
-          webHolder.post { ensurePointerVisible() }
+          screen.post { ensurePointerVisible() }
         }
       }
     }
@@ -247,18 +259,10 @@ class BrowserActivity : AppCompatActivity() {
     currentIndex = index
     webHolder.removeAllViews()
     webHolder.addView(tabs[index].webView, FrameLayout.LayoutParams(-1, -1))
-    addPointerOverlay()
     titleText.text = tabs[index].title
     addressBar.setText(if (tabs[index].url == "about:blank") "" else tabs[index].url)
     refreshTabs()
-    webHolder.post { ensurePointerVisible() }
-  }
-
-  private fun addPointerOverlay() {
-    val size = dp(54)
-    if (pointer.parent != null) (pointer.parent as? FrameLayout)?.removeView(pointer)
-    webHolder.addView(pointer, FrameLayout.LayoutParams(size, size))
-    pointer.bringToFront()
+    screen.post { ensurePointerVisible() }
   }
 
   private fun closeCurrentTab() {
@@ -354,7 +358,7 @@ class BrowserActivity : AppCompatActivity() {
       View.SYSTEM_UI_FLAG_LAYOUT_STABLE
     }
     if (focusPageAfterToggle) {
-      webHolder.post {
+      screen.post {
         ensurePointerVisible()
         focusWebPage()
       }
@@ -365,7 +369,9 @@ class BrowserActivity : AppCompatActivity() {
   private fun focusAddressBar() {
     setFullScreenMode(false, false)
     addressBar.requestFocus()
+    addressBar.setSelection(addressBar.text.length)
     showKeyboard()
+    ensurePointerVisible()
   }
 
   private fun showKeyboard() {
@@ -384,31 +390,35 @@ class BrowserActivity : AppCompatActivity() {
   }
 
   private fun ensurePointerVisible() {
-    if (!::pointer.isInitialized || pointer.parent == null) return
-    if (pointerX <= 0f || pointerY <= 0f) centerPointer()
-    clampPointer()
+    if (!::pointer.isInitialized || !::screen.isInitialized) return
+    if (pointerX <= 0f || pointerY <= 0f) centerPointerInWebPage()
+    clampPointerToScreen()
     pointer.visibility = View.VISIBLE
     pointer.bringToFront()
     updatePointerPosition()
   }
 
-  private fun centerPointer() {
-    pointerX = (webHolder.width / 2f).coerceAtLeast(dp(80).toFloat())
-    pointerY = (webHolder.height / 2f).coerceAtLeast(dp(80).toFloat())
+  private fun centerPointerInWebPage() {
+    val webOrigin = viewOriginInScreen(webHolder)
+    val width = if (webHolder.width > 0) webHolder.width else screen.width
+    val height = if (webHolder.height > 0) webHolder.height else screen.height
+    pointerX = webOrigin.first + width / 2f
+    pointerY = webOrigin.second + height / 2f
+    clampPointerToScreen()
     updatePointerPosition()
   }
 
-  private fun clampPointer() {
+  private fun clampPointerToScreen() {
     val half = dp(27).toFloat()
-    val maxX = max(half, webHolder.width.toFloat() - half)
-    val maxY = max(half, webHolder.height.toFloat() - half)
+    val maxX = max(half, screen.width.toFloat() - half)
+    val maxY = max(half, screen.height.toFloat() - half)
     pointerX = min(max(pointerX, half), maxX)
     pointerY = min(max(pointerY, half), maxY)
   }
 
   private fun updatePointerPosition() {
     if (!::pointer.isInitialized) return
-    clampPointer()
+    clampPointerToScreen()
     val half = dp(27).toFloat()
     pointer.x = pointerX - half
     pointer.y = pointerY - half
@@ -423,13 +433,14 @@ class BrowserActivity : AppCompatActivity() {
   }
 
   private fun autoScrollAtEdges(dx: Float, dy: Float) {
+    val webPoint = pointInsideView(webHolder, pointerX, pointerY) ?: return
     val edge = dp(42)
     val scroll = dp(260)
     when {
-      dy > 0 && pointerY >= webHolder.height - edge -> performPageScroll(scroll)
-      dy < 0 && pointerY <= edge -> performPageScroll(-scroll)
-      dx > 0 && pointerX >= webHolder.width - edge -> activeWebView()?.scrollBy(dp(180), 0)
-      dx < 0 && pointerX <= edge -> activeWebView()?.scrollBy(-dp(180), 0)
+      dy > 0 && webPoint.second >= webHolder.height - edge -> performPageScroll(scroll)
+      dy < 0 && webPoint.second <= edge -> performPageScroll(-scroll)
+      dx > 0 && webPoint.first >= webHolder.width - edge -> activeWebView()?.scrollBy(dp(180), 0)
+      dx < 0 && webPoint.first <= edge -> activeWebView()?.scrollBy(-dp(180), 0)
     }
   }
 
@@ -457,10 +468,36 @@ class BrowserActivity : AppCompatActivity() {
   }
 
   private fun clickAtPointer() {
+    ensurePointerVisible()
+
+    if (!fullScreen) {
+      val hit = findClickableViewAt(root, pointerX, pointerY)
+      when (hit) {
+        addressBar -> {
+          focusAddressBar()
+          return
+        }
+        is Button -> {
+          hit.requestFocus()
+          hit.performClick()
+          return
+        }
+      }
+    }
+
+    if (pointInsideView(webHolder, pointerX, pointerY) != null) {
+      clickWebAtPointer()
+    } else {
+      focusWebPage()
+    }
+  }
+
+  private fun clickWebAtPointer() {
     val web = activeWebView() ?: return
+    val p = pointInsideView(web, pointerX, pointerY) ?: pointInsideView(webHolder, pointerX, pointerY) ?: return
     focusWebPage()
-    val x = pointerX.coerceIn(1f, max(1f, web.width - 1f))
-    val y = pointerY.coerceIn(1f, max(1f, web.height - 1f))
+    val x = p.first.coerceIn(1f, max(1f, web.width - 1f))
+    val y = p.second.coerceIn(1f, max(1f, web.height - 1f))
     val now = System.currentTimeMillis()
     val down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, x, y, 0)
     val up = MotionEvent.obtain(now, now + 80, MotionEvent.ACTION_UP, x, y, 0)
@@ -468,6 +505,39 @@ class BrowserActivity : AppCompatActivity() {
     web.dispatchTouchEvent(up)
     down.recycle()
     up.recycle()
+  }
+
+  private fun findClickableViewAt(view: View, x: Float, y: Float): View? {
+    if (view.visibility != View.VISIBLE || pointInsideView(view, x, y) == null) return null
+    if (view is ViewGroup) {
+      for (i in view.childCount - 1 downTo 0) {
+        val child = view.getChildAt(i)
+        if (child == pointer) continue
+        val found = findClickableViewAt(child, x, y)
+        if (found != null) return found
+      }
+    }
+    return when {
+      view == addressBar -> view
+      view is Button && view.isEnabled -> view
+      else -> null
+    }
+  }
+
+  private fun pointInsideView(view: View, x: Float, y: Float): Pair<Float, Float>? {
+    if (view.visibility != View.VISIBLE || view.width <= 0 || view.height <= 0) return null
+    val origin = viewOriginInScreen(view)
+    val localX = x - origin.first
+    val localY = y - origin.second
+    return if (localX >= 0f && localY >= 0f && localX <= view.width && localY <= view.height) Pair(localX, localY) else null
+  }
+
+  private fun viewOriginInScreen(view: View): Pair<Float, Float> {
+    val viewLocation = IntArray(2)
+    val screenLocation = IntArray(2)
+    view.getLocationOnScreen(viewLocation)
+    screen.getLocationOnScreen(screenLocation)
+    return Pair((viewLocation[0] - screenLocation[0]).toFloat(), (viewLocation[1] - screenLocation[1]).toFloat())
   }
 
   private fun showBrowserCommandMenu() {
@@ -521,9 +591,8 @@ class BrowserActivity : AppCompatActivity() {
   private fun returnToBrowserButtons() {
     setFullScreenMode(false, false)
     header.visibility = View.VISIBLE
-    activeWebView()?.requestFocus()
     ensurePointerVisible()
-    Toast.makeText(this, "Browser buttons are visible", Toast.LENGTH_SHORT).show()
+    Toast.makeText(this, "Browser buttons are visible. Move pointer to any button or address bar and press OK.", Toast.LENGTH_LONG).show()
   }
 
   private fun returnToFirstScreen() {
@@ -543,9 +612,14 @@ class BrowserActivity : AppCompatActivity() {
     }
 
     if (addressBar.hasFocus()) {
-      if (event.keyCode == KeyEvent.KEYCODE_BACK || event.keyCode == KeyEvent.KEYCODE_ESCAPE) {
-        hideKeyboardAndFocusPage()
-        return true
+      if (event.action == KeyEvent.ACTION_DOWN) {
+        when (event.keyCode) {
+          KeyEvent.KEYCODE_DPAD_UP -> { movePointer(0f, -dp(28).toFloat()); return true }
+          KeyEvent.KEYCODE_DPAD_DOWN -> { movePointer(0f, dp(28).toFloat()); return true }
+          KeyEvent.KEYCODE_DPAD_LEFT -> { movePointer(-dp(28).toFloat(), 0f); return true }
+          KeyEvent.KEYCODE_DPAD_RIGHT -> { movePointer(dp(28).toFloat(), 0f); return true }
+          KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE -> { hideKeyboardAndFocusPage(); return true }
+        }
       }
       return super.dispatchKeyEvent(event)
     }
