@@ -41,6 +41,9 @@ class BrowserActivity : AppCompatActivity() {
     private const val APK_URL = "https://programmer-s-picnic.github.io/json-images/tv/champak-tv.apk"
     private const val PREFS = "champak_tabs_prefs"
     private const val KEY_DEFAULT_ASKED = "default_asked_browser"
+    private const val KEY_BOOKMARKS = "browser_bookmarks"
+    private const val KEY_HISTORY = "browser_history"
+    private const val MAX_HISTORY = 60
     private const val DESKTOP_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
   }
 
@@ -121,15 +124,19 @@ class BrowserActivity : AppCompatActivity() {
     nav.addView(btn("↻", "Reload") { activeWebView()?.reload() })
     nav.addView(btn("⌂", "Home") { loadInCurrent(HOME_URL) })
     addressBar = EditText(this).apply {
-      hint = "Type website or search"
+      hint = "Type website or search • OK opens keyboard • Enter/Go opens page"
       setSingleLine(true)
       textSize = 14f
       setTextColor(Color.rgb(3, 44, 84))
+      setHintTextColor(Color.rgb(90, 115, 140))
       setBackgroundColor(Color.WHITE)
       imeOptions = EditorInfo.IME_ACTION_GO
       setOnFocusChangeListener { _, hasFocus ->
         pointer.visibility = View.VISIBLE
-        if (hasFocus) showKeyboard()
+        if (hasFocus) {
+          showKeyboard()
+          Toast.makeText(this@BrowserActivity, "Address bar: type a site, URL, or search words. Press Go/Enter to open.", Toast.LENGTH_LONG).show()
+        }
       }
       setOnClickListener { showKeyboard() }
       setOnEditorActionListener { _, actionId, event ->
@@ -148,9 +155,12 @@ class BrowserActivity : AppCompatActivity() {
     tools.addView(btn("First", "Return to first app screen") { returnToFirstScreen() }, LinearLayout.LayoutParams(0, -1, 1f))
     tools.addView(btn("Page", "Focus web page") { focusWebPage() }, LinearLayout.LayoutParams(0, -1, 1f))
     tools.addView(btn("Keys", "Open keyboard") { focusAddressBar() }, LinearLayout.LayoutParams(0, -1, 1f))
-    tools.addView(btn("Google", "Google sign-in outside") { openGoogleSignIn() }, LinearLayout.LayoutParams(0, -1, 1f))
-    tools.addView(btn("Outside", "Open outside") { openOutside(activeTab()?.url ?: HOME_URL) }, LinearLayout.LayoutParams(0, -1, 1f))
-    tools.addView(btn("Update", "Update app") { openOutside(APK_URL) }, LinearLayout.LayoutParams(0, -1, 1f))
+    tools.addView(btn("★", "Add bookmark") { addCurrentBookmark() }, LinearLayout.LayoutParams(0, -1, 1f))
+    tools.addView(btn("☆", "Bookmarks") { showBookmarks() }, LinearLayout.LayoutParams(0, -1, 1f))
+    tools.addView(btn("◷", "History") { showHistory() }, LinearLayout.LayoutParams(0, -1, 1f))
+    tools.addView(btn("?", "Address bar hints") { showAddressHints() }, LinearLayout.LayoutParams(0, -1, 1f))
+    tools.addView(btn("Out", "Open outside") { openOutside(activeTab()?.url ?: HOME_URL) }, LinearLayout.LayoutParams(0, -1, 1f))
+    tools.addView(btn("Upd", "Update app") { openOutside(APK_URL) }, LinearLayout.LayoutParams(0, -1, 1f))
 
     tabStrip = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setBackgroundColor(Color.rgb(2, 35, 70)) }
     header.addView(tabStrip, LinearLayout.LayoutParams(-1, dp(34)))
@@ -238,6 +248,7 @@ class BrowserActivity : AppCompatActivity() {
         override fun onPageFinished(view: WebView, url: String) {
           activeTabFor(view)?.url = url
           if (view == activeWebView()) addressBar.setText(if (url == "about:blank") "" else url)
+          addHistoryItem(url)
           refreshTabs()
           screen.post { ensurePointerVisible() }
         }
@@ -323,6 +334,86 @@ class BrowserActivity : AppCompatActivity() {
     } catch (_: Exception) {
       Toast.makeText(this, "No outside browser/app found", Toast.LENGTH_LONG).show()
     }
+  }
+
+  private fun readList(key: String): MutableList<String> {
+    val text = prefs.getString(key, "").orEmpty()
+    return text.lines().map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
+  }
+
+  private fun saveList(key: String, values: List<String>) {
+    prefs.edit().putString(key, values.joinToString("\n")).apply()
+  }
+
+  private fun addHistoryItem(url: String) {
+    if (url.isBlank() || url == "about:blank") return
+    val items = readList(KEY_HISTORY)
+    items.remove(url)
+    items.add(0, url)
+    saveList(KEY_HISTORY, items.take(MAX_HISTORY))
+  }
+
+  private fun addCurrentBookmark() {
+    val url = activeTab()?.url.orEmpty()
+    if (url.isBlank() || url == "about:blank") {
+      Toast.makeText(this, "No page to bookmark", Toast.LENGTH_SHORT).show()
+      return
+    }
+    val items = readList(KEY_BOOKMARKS)
+    items.remove(url)
+    items.add(0, url)
+    saveList(KEY_BOOKMARKS, items)
+    Toast.makeText(this, "Bookmark saved", Toast.LENGTH_SHORT).show()
+  }
+
+  private fun showBookmarks() {
+    val items = readList(KEY_BOOKMARKS)
+    if (items.isEmpty()) {
+      AlertDialog.Builder(this)
+        .setTitle("Bookmarks")
+        .setMessage("No bookmarks yet. Open a page and choose ★ Add Bookmark.")
+        .setPositiveButton("OK", null)
+        .show()
+      return
+    }
+    AlertDialog.Builder(this)
+      .setTitle("Bookmarks")
+      .setItems(items.toTypedArray()) { _, which -> loadInCurrent(items[which]); focusWebPage() }
+      .setPositiveButton("Add Current") { _, _ -> addCurrentBookmark() }
+      .setNeutralButton("Clear All") { _, _ -> saveList(KEY_BOOKMARKS, emptyList()) }
+      .setNegativeButton("Close", null)
+      .show()
+  }
+
+  private fun showHistory() {
+    val items = readList(KEY_HISTORY)
+    if (items.isEmpty()) {
+      AlertDialog.Builder(this)
+        .setTitle("History")
+        .setMessage("No history yet. Pages you open will appear here.")
+        .setPositiveButton("OK", null)
+        .show()
+      return
+    }
+    AlertDialog.Builder(this)
+      .setTitle("History")
+      .setItems(items.toTypedArray()) { _, which -> loadInCurrent(items[which]); focusWebPage() }
+      .setNeutralButton("Clear All") { _, _ -> saveList(KEY_HISTORY, emptyList()) }
+      .setNegativeButton("Close", null)
+      .show()
+  }
+
+  private fun showAddressHints() {
+    AlertDialog.Builder(this)
+      .setTitle("Address Bar Hints")
+      .setMessage(
+        "Move the yellow pointer to the address bar and press OK.\n\n" +
+          "Type a full URL like https://www.learnwithchampak.live, a short site like youtube.com, or search words like python loops.\n\n" +
+          "Press Enter/Go to open. Use ★ to save the current page, ☆ for bookmarks, and ◷ for history."
+      )
+      .setPositiveButton("Open Keyboard") { _, _ -> focusAddressBar() }
+      .setNegativeButton("Close", null)
+      .show()
   }
 
   private fun askDefaultBrowserOnFirstRun() {
@@ -548,6 +639,10 @@ class BrowserActivity : AppCompatActivity() {
       if (fullScreen) "Show Controls" else "Full Screen Web Page",
       "Focus Web Page / Pointer",
       "Open Keyboard / Address Bar",
+      "Address Bar Hints",
+      "Add Bookmark",
+      "Bookmarks",
+      "History",
       "Back in Web Page",
       "Home",
       "Open Outside",
@@ -564,10 +659,14 @@ class BrowserActivity : AppCompatActivity() {
           2 -> setFullScreenMode(!fullScreen, true)
           3 -> focusWebPage()
           4 -> focusAddressBar()
-          5 -> goBackOrClose()
-          6 -> loadInCurrent(HOME_URL)
-          7 -> openOutside(activeTab()?.url ?: HOME_URL)
-          8 -> finish()
+          5 -> showAddressHints()
+          6 -> addCurrentBookmark()
+          7 -> showBookmarks()
+          8 -> showHistory()
+          9 -> goBackOrClose()
+          10 -> loadInCurrent(HOME_URL)
+          11 -> openOutside(activeTab()?.url ?: HOME_URL)
+          12 -> finish()
         }
       }
       .setOnCancelListener { longPressMenuShown = false }
