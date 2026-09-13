@@ -12,6 +12,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.util.Base64
 import android.util.Log
 import android.view.Gravity
@@ -89,12 +90,7 @@ class MainActivity : AppCompatActivity() {
     val root = LinearLayout(this).apply {
       orientation = if (phoneMode) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
       gravity = Gravity.CENTER_VERTICAL
-      setPadding(
-        dp(if (phoneMode) 18 else 44),
-        dp(if (phoneMode) 18 else 28),
-        dp(if (phoneMode) 18 else 44),
-        dp(if (phoneMode) 18 else 28)
-      )
+      setPadding(dp(if (phoneMode) 16 else 34), dp(if (phoneMode) 16 else 22), dp(if (phoneMode) 16 else 34), dp(if (phoneMode) 16 else 22))
       background = GradientDrawable(
         GradientDrawable.Orientation.TL_BR,
         intArrayOf(Color.rgb(3, 19, 46), Color.rgb(8, 74, 128), Color.rgb(2, 13, 28))
@@ -105,107 +101,78 @@ class MainActivity : AppCompatActivity() {
       orientation = LinearLayout.VERTICAL
       gravity = Gravity.CENTER
     }
-    root.addView(
-      left,
-      if (phoneMode) {
-        LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-      } else {
-        LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 0.42f)
-      }
-    )
+    root.addView(left, if (phoneMode) LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT) else LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 0.40f))
 
-    val photoSize = if (phoneMode) 170 else 310
+    val photoSize = if (phoneMode) 150 else 280
     val photo = ImageView(this).apply {
       adjustViewBounds = true
       scaleType = ImageView.ScaleType.CENTER_CROP
-      background = rounded(Color.WHITE, dp(26), Color.rgb(74, 198, 255), dp(3))
+      background = rounded(Color.WHITE, dp(24), Color.rgb(74, 198, 255), dp(3))
       setPadding(dp(6), dp(6), dp(6), dp(6))
       loadPhotoInto(this)
     }
     left.addView(photo, LinearLayout.LayoutParams(dp(photoSize), dp(photoSize)))
 
-    left.addView(space(if (phoneMode) 10 else 18))
-    left.addView(text("Champak Roy", if (phoneMode) 24f else 30f, Color.WHITE, true).apply { gravity = Gravity.CENTER })
-    left.addView(text("AI • ML • Python • DSA • Programming", if (phoneMode) 14f else 17f, Color.rgb(202, 232, 255), false).apply { gravity = Gravity.CENTER })
-    left.addView(text("Pointer: remote arrows or touch. Edges scroll.", if (phoneMode) 13f else 15f, Color.rgb(255, 221, 128), true).apply {
+    left.addView(space(if (phoneMode) 8 else 14))
+    left.addView(text("Champak Roy", if (phoneMode) 22f else 28f, Color.WHITE, true).apply { gravity = Gravity.CENTER })
+    left.addView(text("AI • ML • Python • DSA • Programming", if (phoneMode) 13f else 16f, Color.rgb(202, 232, 255), false).apply { gravity = Gravity.CENTER })
+    left.addView(text("Pointer: remote arrows or touch. Edges scroll.", if (phoneMode) 12f else 14f, Color.rgb(255, 221, 128), true).apply {
       gravity = Gravity.CENTER
-      setPadding(0, dp(10), 0, 0)
+      setPadding(0, dp(8), 0, 0)
     })
 
     val right = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
       gravity = Gravity.CENTER_VERTICAL
-      setPadding(if (phoneMode) 0 else dp(34), if (phoneMode) dp(16) else 0, 0, 0)
+      setPadding(if (phoneMode) 0 else dp(28), if (phoneMode) dp(14) else 0, 0, 0)
     }
-    root.addView(
-      right,
-      if (phoneMode) {
-        LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-      } else {
-        LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 0.58f)
-      }
-    )
+    root.addView(right, if (phoneMode) LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT) else LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 0.60f))
 
     clockCanvas = ClockCanvasView(this)
-    right.addView(
-      clockCanvas,
-      LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(if (phoneMode) 110 else 150)).apply { bottomMargin = dp(10) }
-    )
+    right.addView(clockCanvas, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(if (phoneMode) 96 else 130)).apply { bottomMargin = dp(8) })
 
-    right.addView(text("Installed as: Learn With Champak TV", if (phoneMode) 14f else 16f, Color.rgb(255, 221, 128), true))
-    right.addView(text("Learn With", if (phoneMode) 34f else 46f, Color.WHITE, true))
-    right.addView(text("Champak", if (phoneMode) 44f else 62f, Color.rgb(77, 207, 255), true).apply {
-      setShadowLayer(10f, 0f, 4f, Color.BLACK)
-    })
-    right.addView(text("Study AI, ML, Python, DSA and Programming with Champak Roy", if (phoneMode) 16f else 22f, Color.WHITE, true).apply {
-      setPadding(0, dp(8), 0, dp(10))
-    })
-    right.addView(text("Learn. Build. Grow.", if (phoneMode) 20f else 24f, Color.rgb(255, 221, 128), true))
-    right.addView(space(if (phoneMode) 12 else 18))
+    right.addView(text("Installed as: Learn With Champak TV", if (phoneMode) 13f else 15f, Color.rgb(255, 221, 128), true))
+    right.addView(text("Learn With", if (phoneMode) 30f else 40f, Color.WHITE, true))
+    right.addView(text("Champak", if (phoneMode) 38f else 54f, Color.rgb(77, 207, 255), true).apply { setShadowLayer(10f, 0f, 4f, Color.BLACK) })
+    right.addView(text("Study AI, ML, Python, DSA and Programming with Champak Roy", if (phoneMode) 15f else 20f, Color.WHITE, true).apply { setPadding(0, dp(6), 0, dp(8)) })
+    right.addView(text("Learn. Build. Grow.", if (phoneMode) 18f else 22f, Color.rgb(255, 221, 128), true))
+    right.addView(space(if (phoneMode) 10 else 14))
 
     val linkPanel = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
-      setPadding(dp(18), dp(14), dp(18), dp(14))
-      background = rounded(Color.argb(235, 255, 255, 255), dp(24), Color.rgb(82, 204, 255), dp(2))
+      setPadding(dp(16), dp(12), dp(16), dp(12))
+      background = rounded(Color.argb(235, 255, 255, 255), dp(22), Color.rgb(82, 204, 255), dp(2))
     }
     right.addView(linkPanel, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
 
-    linkPanel.addView(text("Blogs, YouTube, Browser & APK", if (phoneMode) 20f else 25f, Color.rgb(3, 44, 84), true))
-    linkPanel.addView(space(10))
+    linkPanel.addView(text("Blogs, YouTube, Browser & APK", if (phoneMode) 18f else 22f, Color.rgb(3, 44, 84), true))
+    linkPanel.addView(space(8))
 
     val links = listOf(
       HomeLink("Open Blank Browser", "", false),
       HomeLink("Learn With Champak", "https://www.learnwithchampak.live", false),
       HomeLink("Inside Kashi", "https://insidekashi.com", false),
       HomeLink("YouTube Channel", "https://youtube.com/@champaksworld", false),
+      HomeLink("Update App", apkUrl, true),
+      HomeLink("Allow APK Install", "settings://install", true),
       HomeLink("Download Latest APK", apkUrl, true)
     )
 
     for (link in links) {
       val button = linkButton(link.label, link.url, phoneMode, link.external)
       linkButtons.add(button)
-      linkPanel.addView(button, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(if (phoneMode) 64 else 58)))
-      linkPanel.addView(space(10))
+      linkPanel.addView(button, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(if (phoneMode) 56 else 48)))
+      linkPanel.addView(space(8))
     }
 
     val installedInfo = getInstalledVersionLabel()
-    versionText = text(
-      "Installed: $installedInfo\nLatest public APK: checking...\nAPK link: $apkUrl",
-      if (phoneMode) 13f else 15f,
-      Color.rgb(3, 44, 84),
-      true
-    ).apply {
-      setPadding(dp(10), dp(8), dp(10), dp(8))
+    versionText = text("Installed: $installedInfo\nLatest public APK: checking...\nAPK link: $apkUrl", if (phoneMode) 12f else 13f, Color.rgb(3, 44, 84), true).apply {
+      setPadding(dp(10), dp(7), dp(10), dp(7))
       background = rounded(Color.rgb(232, 247, 255), dp(14), Color.rgb(82, 204, 255), dp(1))
     }
     linkPanel.addView(versionText, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
 
-    statusText = text(
-      if (phoneMode) "Touch near top/bottom edge to scroll. Blank Browser opens keyboard." else "Use TV remote arrows. Blank Browser opens an empty address bar.",
-      if (phoneMode) 14f else 16f,
-      Color.rgb(218, 240, 255),
-      false
-    ).apply { setPadding(0, dp(14), 0, 0) }
+    statusText = text(if (phoneMode) "Touch edge to scroll. Update button opens latest APK." else "Use TV remote arrows. Update button opens latest APK installer/download flow.", if (phoneMode) 13f else 15f, Color.rgb(218, 240, 255), false).apply { setPadding(0, dp(12), 0, 0) }
     right.addView(statusText)
 
     scrollView.addView(root)
@@ -213,34 +180,39 @@ class MainActivity : AppCompatActivity() {
 
     pointer = TextView(this).apply {
       text = "➤"
-      textSize = if (phoneMode) 32f else 38f
+      textSize = if (phoneMode) 24f else 28f
       setTextColor(Color.rgb(255, 221, 128))
-      setShadowLayer(10f, 0f, 0f, Color.BLACK)
+      setShadowLayer(8f, 0f, 0f, Color.BLACK)
       typeface = Typeface.DEFAULT_BOLD
       gravity = Gravity.CENTER
       elevation = dp(20).toFloat()
     }
-    stage.addView(pointer, FrameLayout.LayoutParams(dp(56), dp(56)))
+    stage.addView(pointer, FrameLayout.LayoutParams(dp(42), dp(42)))
 
     setContentView(stage)
 
     stage.post {
       pointerX = stage.width * 0.64f
       pointerY = stage.height * 0.60f
-      updatePointerPosition()
+      updatePointerPosition(true)
       focusButtonUnderPointer()
       stage.requestFocus()
     }
   }
 
   private fun linkButton(label: String, url: String, phoneMode: Boolean, openExternal: Boolean): Button {
-    val displayUrl = if (url.isBlank()) "Blank address bar + keyboard" else url
+    val displayUrl = when {
+      url.isBlank() -> "Blank address bar + keyboard"
+      url.startsWith("settings://") -> "Install unknown apps permission"
+      label == "Update App" -> "Install latest version"
+      else -> url
+    }
     return Button(this).apply {
       text = "$label\n$displayUrl"
-      textSize = if (phoneMode) 14f else 15f
+      textSize = if (phoneMode) 12.5f else 13.5f
       isAllCaps = false
       gravity = Gravity.CENTER_VERTICAL
-      setPadding(dp(18), 0, dp(18), 0)
+      setPadding(dp(14), 0, dp(14), 0)
       setTextColor(Color.WHITE)
       typeface = Typeface.DEFAULT_BOLD
       background = buttonBg(false)
@@ -249,17 +221,24 @@ class MainActivity : AppCompatActivity() {
 
       setOnFocusChangeListener { view, hasFocus ->
         background = buttonBg(hasFocus)
-        view.animate().scaleX(if (hasFocus) 1.045f else 1f).scaleY(if (hasFocus) 1.045f else 1f).setDuration(120).start()
+        view.animate().scaleX(if (hasFocus) 1.035f else 1f).scaleY(if (hasFocus) 1.035f else 1f).setDuration(90).start()
         if (hasFocus) statusText.text = "Focused: $label"
       }
 
       setOnClickListener {
         statusText.text = when {
+          label == "Update App" -> "Opening latest APK update"
+          url.startsWith("settings://") -> "Opening APK install permission settings"
           openExternal -> "Opening APK download link"
           url.isBlank() -> "Opening blank browser with keyboard"
           else -> "Opening inside app: $label"
         }
-        if (openExternal) openOutside(url) else openInsideApp(label, url)
+        when {
+          label == "Update App" -> updateApp()
+          url.startsWith("settings://") -> openInstallPermissionSettings()
+          openExternal -> openOutside(url)
+          else -> openInsideApp(label, url)
+        }
       }
     }
   }
@@ -292,16 +271,12 @@ class MainActivity : AppCompatActivity() {
           else -> "Could not compare version"
         }
         runOnUiThread {
-          if (::versionText.isInitialized) {
-            versionText.text = "Installed: ${getInstalledVersionLabel()}\nLatest public APK: v$latestName ($latestCode)\nStatus: $message\nAPK link: $latestApk"
-          }
+          if (::versionText.isInitialized) versionText.text = "Installed: ${getInstalledVersionLabel()}\nLatest public APK: v$latestName ($latestCode)\nStatus: $message\nAPK link: $latestApk"
           if (::statusText.isInitialized) statusText.text = message
         }
       } catch (ex: Exception) {
         runOnUiThread {
-          if (::versionText.isInitialized) {
-            versionText.text = "Installed: ${getInstalledVersionLabel()}\nLatest public APK: unable to check now\nAPK link: $apkUrl"
-          }
+          if (::versionText.isInitialized) versionText.text = "Installed: ${getInstalledVersionLabel()}\nLatest public APK: unable to check now\nAPK link: $apkUrl"
         }
         Log.e(tag, "Version check failed", ex)
       }
@@ -317,6 +292,25 @@ class MainActivity : AppCompatActivity() {
     } catch (ex: Exception) {
       Toast.makeText(this, "Could not open browser screen", Toast.LENGTH_LONG).show()
       Log.e(tag, "Unable to open internal browser: $url", ex)
+    }
+  }
+
+  private fun updateApp() {
+    try {
+      Toast.makeText(this, "Opening latest APK update", Toast.LENGTH_LONG).show()
+      startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(apkUrl)).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) })
+    } catch (ex: Exception) {
+      Log.e(tag, "Unable to open update URL", ex)
+      openInstallPermissionSettings()
+    }
+  }
+
+  private fun openInstallPermissionSettings() {
+    try {
+      startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+    } catch (ex: Exception) {
+      Toast.makeText(this, "Open Settings > Install unknown apps", Toast.LENGTH_LONG).show()
+      Log.e(tag, "Unable to open install permission settings", ex)
     }
   }
 
@@ -366,7 +360,7 @@ class MainActivity : AppCompatActivity() {
         MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE, MotionEvent.ACTION_UP -> {
           pointerX = (event.x - pointer.width / 2f).coerceIn(0f, (stage.width - pointer.width).toFloat())
           pointerY = (event.y - pointer.height / 2f).coerceIn(0f, (stage.height - pointer.height).toFloat())
-          updatePointerPosition()
+          updatePointerPosition(false)
           val scrolled = autoScrollAtPointerEdges(0)
           val target = focusButtonUnderPointer()
           if (event.actionMasked == MotionEvent.ACTION_UP) {
@@ -397,7 +391,7 @@ class MainActivity : AppCompatActivity() {
   }
 
   private fun movePointer(dx: Int, dy: Int) {
-    val step = dp(54).toFloat()
+    val step = dp(34).toFloat()
     val maxX = (stage.width - pointer.width).coerceAtLeast(0).toFloat()
     val maxY = (stage.height - pointer.height).coerceAtLeast(0).toFloat()
     val desiredX = pointerX + dx * step
@@ -405,7 +399,7 @@ class MainActivity : AppCompatActivity() {
 
     pointerX = desiredX.coerceIn(0f, maxX)
     pointerY = desiredY.coerceIn(0f, maxY)
-    updatePointerPosition()
+    updatePointerPosition(true)
 
     val scrolled = autoScrollAtPointerEdges(dy)
     val target = focusButtonUnderPointer()
@@ -414,7 +408,7 @@ class MainActivity : AppCompatActivity() {
       target != null -> "Pointer over: ${target.text.toString().lineSequence().first()}"
       desiredY < 0f -> "Top edge reached"
       desiredY > maxY -> "Bottom edge reached"
-      else -> "Pointer moved"
+      else -> "Smooth pointer moved"
     }
   }
 
@@ -422,8 +416,8 @@ class MainActivity : AppCompatActivity() {
     if (!::scrollView.isInitialized || !::stage.isInitialized || !::pointer.isInitialized) return false
     if (stage.height <= 0) return false
 
-    val edge = dp(72).toFloat()
-    val scrollAmount = dp(130)
+    val edge = dp(60).toFloat()
+    val scrollAmount = dp(105)
     val maxPointerY = (stage.height - pointer.height).coerceAtLeast(0).toFloat()
     val pointerBottom = pointerY + pointer.height
     val nearTop = pointerY <= edge
@@ -435,22 +429,25 @@ class MainActivity : AppCompatActivity() {
       (dy < 0 || nearTop) && nearTop && canScrollUp -> {
         scrollView.smoothScrollBy(0, -scrollAmount)
         pointerY = (edge + dp(8)).coerceAtMost(maxPointerY)
-        updatePointerPosition()
+        updatePointerPosition(true)
         true
       }
       (dy > 0 || nearBottom) && nearBottom && canScrollDown -> {
-        scrollView.smoothScrollBy(0, scrollAmount)
         pointerY = (stage.height - edge - pointer.height - dp(8)).coerceIn(0f, maxPointerY)
-        updatePointerPosition()
+        scrollView.smoothScrollBy(0, scrollAmount)
+        updatePointerPosition(true)
         true
       }
       else -> false
     }
   }
 
-  private fun updatePointerPosition() {
-    pointer.x = pointerX
-    pointer.y = pointerY
+  private fun updatePointerPosition(animated: Boolean) {
+    pointer.animate().cancel()
+    if (animated) pointer.animate().x(pointerX).y(pointerY).setDuration(75).start() else {
+      pointer.x = pointerX
+      pointer.y = pointerY
+    }
     pointer.bringToFront()
   }
 
@@ -495,9 +492,7 @@ class MainActivity : AppCompatActivity() {
     }
   }
 
-  private fun space(h: Int): Space = Space(this).apply {
-    layoutParams = LinearLayout.LayoutParams(1, dp(h))
-  }
+  private fun space(h: Int): Space = Space(this).apply { layoutParams = LinearLayout.LayoutParams(1, dp(h)) }
 
   private fun rounded(color: Int, radius: Int, strokeColor: Int, strokeWidth: Int): GradientDrawable {
     return GradientDrawable().apply {
@@ -510,8 +505,8 @@ class MainActivity : AppCompatActivity() {
   private fun buttonBg(focused: Boolean): GradientDrawable {
     val colors = if (focused) intArrayOf(Color.rgb(255, 168, 37), Color.rgb(255, 111, 0)) else intArrayOf(Color.rgb(9, 74, 132), Color.rgb(5, 43, 92))
     return GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, colors).apply {
-      cornerRadius = dp(18).toFloat()
-      setStroke(dp(if (focused) 4 else 2), if (focused) Color.WHITE else Color.rgb(82, 204, 255))
+      cornerRadius = dp(14).toFloat()
+      setStroke(dp(if (focused) 3 else 1), if (focused) Color.WHITE else Color.rgb(82, 204, 255))
     }
   }
 
