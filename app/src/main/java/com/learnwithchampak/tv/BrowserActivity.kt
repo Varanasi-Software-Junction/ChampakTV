@@ -22,8 +22,9 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.ArrayAdapter
+import android.widget.AutoCompleteTextView
 import android.widget.Button
-import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -43,7 +44,7 @@ class BrowserActivity : AppCompatActivity() {
     private const val KEY_DEFAULT_ASKED = "default_asked_browser"
     private const val KEY_BOOKMARKS = "browser_bookmarks"
     private const val KEY_HISTORY = "browser_history"
-    private const val MAX_HISTORY = 60
+    private const val MAX_HISTORY = 80
     private const val DESKTOP_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
   }
 
@@ -55,7 +56,7 @@ class BrowserActivity : AppCompatActivity() {
   private lateinit var tabStrip: LinearLayout
   private lateinit var webHolder: FrameLayout
   private lateinit var pointer: TextView
-  private lateinit var addressBar: EditText
+  private lateinit var addressBar: AutoCompleteTextView
   private lateinit var titleText: TextView
   private lateinit var prefs: SharedPreferences
 
@@ -123,8 +124,10 @@ class BrowserActivity : AppCompatActivity() {
     nav.addView(btn("→", "Forward") { activeWebView()?.let { if (it.canGoForward()) it.goForward() } })
     nav.addView(btn("↻", "Reload") { activeWebView()?.reload() })
     nav.addView(btn("⌂", "Home") { loadInCurrent(HOME_URL) })
-    addressBar = EditText(this).apply {
-      hint = "Type website or search • OK opens keyboard • Enter/Go opens page"
+
+    addressBar = AutoCompleteTextView(this).apply {
+      hint = "Type website/search or saved link • OK shows saved links"
+      threshold = 1
       setSingleLine(true)
       textSize = 14f
       setTextColor(Color.rgb(3, 44, 84))
@@ -134,21 +137,33 @@ class BrowserActivity : AppCompatActivity() {
       setOnFocusChangeListener { _, hasFocus ->
         pointer.visibility = View.VISIBLE
         if (hasFocus) {
+          refreshAddressSuggestions()
           showKeyboard()
-          Toast.makeText(this@BrowserActivity, "Address bar: type a site, URL, or search words. Press Go/Enter to open.", Toast.LENGTH_LONG).show()
+          postDelayed({ showDropDown() }, 200)
         }
       }
-      setOnClickListener { showKeyboard() }
+      setOnClickListener {
+        refreshAddressSuggestions()
+        showKeyboard()
+        showDropDown()
+      }
+      setOnItemClickListener { _, _, position, _ ->
+        val value = adapter?.getItem(position)?.toString().orEmpty()
+        if (value.isNotBlank()) {
+          setText(value, false)
+          loadInCurrent(value)
+          hideKeyboardAndFocusPage()
+        }
+      }
       setOnEditorActionListener { _, actionId, event ->
         if (actionId == EditorInfo.IME_ACTION_GO || event?.keyCode == KeyEvent.KEYCODE_ENTER) {
-          loadInCurrent(text.toString())
-          hideKeyboardAndFocusPage()
+          openAddressBarValue()
           true
         } else false
       }
     }
     nav.addView(addressBar, LinearLayout.LayoutParams(0, dp(38), 1f))
-    nav.addView(btn("▶", "Go") { loadInCurrent(addressBar.text.toString()); hideKeyboardAndFocusPage() })
+    nav.addView(btn("▶", "Go") { openAddressBarValue() })
 
     val tools = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
     header.addView(tools, LinearLayout.LayoutParams(-1, dp(38)))
@@ -157,7 +172,7 @@ class BrowserActivity : AppCompatActivity() {
     tools.addView(btn("Keys", "Open keyboard") { focusAddressBar() }, LinearLayout.LayoutParams(0, -1, 1f))
     tools.addView(btn("★", "Add bookmark") { addCurrentBookmark() }, LinearLayout.LayoutParams(0, -1, 1f))
     tools.addView(btn("☆", "Bookmarks") { showBookmarks() }, LinearLayout.LayoutParams(0, -1, 1f))
-    tools.addView(btn("◷", "History") { showHistory() }, LinearLayout.LayoutParams(0, -1, 1f))
+    tools.addView(btn("◷", "Visited") { showVisitedLinks() }, LinearLayout.LayoutParams(0, -1, 1f))
     tools.addView(btn("?", "Address bar hints") { showAddressHints() }, LinearLayout.LayoutParams(0, -1, 1f))
     tools.addView(btn("Out", "Open outside") { openOutside(activeTab()?.url ?: HOME_URL) }, LinearLayout.LayoutParams(0, -1, 1f))
     tools.addView(btn("Upd", "Update app") { openOutside(APK_URL) }, LinearLayout.LayoutParams(0, -1, 1f))
@@ -192,6 +207,7 @@ class BrowserActivity : AppCompatActivity() {
     }
 
     setContentView(screen)
+    refreshAddressSuggestions()
     screen.post { centerPointerInWebPage() }
   }
 
@@ -247,8 +263,8 @@ class BrowserActivity : AppCompatActivity() {
         }
         override fun onPageFinished(view: WebView, url: String) {
           activeTabFor(view)?.url = url
-          if (view == activeWebView()) addressBar.setText(if (url == "about:blank") "" else url)
-          addHistoryItem(url)
+          if (view == activeWebView()) addressBar.setText(if (url == "about:blank") "" else url, false)
+          addVisitedLink(url)
           refreshTabs()
           screen.post { ensurePointerVisible() }
         }
@@ -271,7 +287,7 @@ class BrowserActivity : AppCompatActivity() {
     webHolder.removeAllViews()
     webHolder.addView(tabs[index].webView, FrameLayout.LayoutParams(-1, -1))
     titleText.text = tabs[index].title
-    addressBar.setText(if (tabs[index].url == "about:blank") "" else tabs[index].url)
+    addressBar.setText(if (tabs[index].url == "about:blank") "" else tabs[index].url, false)
     refreshTabs()
     screen.post { ensurePointerVisible() }
   }
@@ -304,10 +320,17 @@ class BrowserActivity : AppCompatActivity() {
       .show()
   }
 
+  private fun openAddressBarValue() {
+    val input = addressBar.text.toString()
+    val saved = findSavedLink(input)
+    loadInCurrent(saved ?: input)
+    hideKeyboardAndFocusPage()
+  }
+
   private fun loadInCurrent(input: String) {
     val url = normalizeUrl(input)
     activeTab()?.url = url
-    addressBar.setText(if (url == "about:blank") "" else url)
+    addressBar.setText(if (url == "about:blank") "" else url, false)
     activeWebView()?.settings?.userAgentString = DESKTOP_USER_AGENT
     activeWebView()?.loadUrl(url)
   }
@@ -345,12 +368,35 @@ class BrowserActivity : AppCompatActivity() {
     prefs.edit().putString(key, values.joinToString("\n")).apply()
   }
 
-  private fun addHistoryItem(url: String) {
+  private fun savedLinks(): List<String> {
+    val combined = mutableListOf<String>()
+    combined.addAll(readList(KEY_BOOKMARKS))
+    combined.addAll(readList(KEY_HISTORY))
+    return combined.distinct().filter { it.isNotBlank() && it != "about:blank" }
+  }
+
+  private fun refreshAddressSuggestions() {
+    if (!::addressBar.isInitialized) return
+    val items = savedLinks()
+    val adapter = ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, items)
+    addressBar.setAdapter(adapter)
+  }
+
+  private fun findSavedLink(input: String): String? {
+    val q = input.trim()
+    if (q.isEmpty()) return null
+    val qLower = q.lowercase()
+    return savedLinks().firstOrNull { it.equals(q, ignoreCase = true) }
+      ?: savedLinks().firstOrNull { it.lowercase().contains(qLower) }
+  }
+
+  private fun addVisitedLink(url: String) {
     if (url.isBlank() || url == "about:blank") return
     val items = readList(KEY_HISTORY)
     items.remove(url)
     items.add(0, url)
     saveList(KEY_HISTORY, items.take(MAX_HISTORY))
+    refreshAddressSuggestions()
   }
 
   private fun addCurrentBookmark() {
@@ -363,7 +409,8 @@ class BrowserActivity : AppCompatActivity() {
     items.remove(url)
     items.add(0, url)
     saveList(KEY_BOOKMARKS, items)
-    Toast.makeText(this, "Bookmark saved", Toast.LENGTH_SHORT).show()
+    refreshAddressSuggestions()
+    Toast.makeText(this, "Bookmark saved. It will appear in the address bar suggestions.", Toast.LENGTH_LONG).show()
   }
 
   private fun showBookmarks() {
@@ -380,25 +427,25 @@ class BrowserActivity : AppCompatActivity() {
       .setTitle("Bookmarks")
       .setItems(items.toTypedArray()) { _, which -> loadInCurrent(items[which]); focusWebPage() }
       .setPositiveButton("Add Current") { _, _ -> addCurrentBookmark() }
-      .setNeutralButton("Clear All") { _, _ -> saveList(KEY_BOOKMARKS, emptyList()) }
+      .setNeutralButton("Clear All") { _, _ -> saveList(KEY_BOOKMARKS, emptyList()); refreshAddressSuggestions() }
       .setNegativeButton("Close", null)
       .show()
   }
 
-  private fun showHistory() {
+  private fun showVisitedLinks() {
     val items = readList(KEY_HISTORY)
     if (items.isEmpty()) {
       AlertDialog.Builder(this)
-        .setTitle("History")
-        .setMessage("No history yet. Pages you open will appear here.")
+        .setTitle("Visited Links")
+        .setMessage("No visited links yet. Every opened page will be saved and will appear in the address bar suggestions.")
         .setPositiveButton("OK", null)
         .show()
       return
     }
     AlertDialog.Builder(this)
-      .setTitle("History")
+      .setTitle("Visited Links")
       .setItems(items.toTypedArray()) { _, which -> loadInCurrent(items[which]); focusWebPage() }
-      .setNeutralButton("Clear All") { _, _ -> saveList(KEY_HISTORY, emptyList()) }
+      .setNeutralButton("Clear All") { _, _ -> saveList(KEY_HISTORY, emptyList()); refreshAddressSuggestions() }
       .setNegativeButton("Close", null)
       .show()
   }
@@ -407,11 +454,12 @@ class BrowserActivity : AppCompatActivity() {
     AlertDialog.Builder(this)
       .setTitle("Address Bar Hints")
       .setMessage(
-        "Move the yellow pointer to the address bar and press OK.\n\n" +
-          "Type a full URL like https://www.learnwithchampak.live, a short site like youtube.com, or search words like python loops.\n\n" +
-          "Press Enter/Go to open. Use ★ to save the current page, ☆ for bookmarks, and ◷ for history."
+        "Visited links are saved automatically.\n\n" +
+          "Move the yellow pointer to the address bar and press OK. Start typing part of a visited link, then choose the matching saved link.\n\n" +
+          "You can also press Go after typing part of a saved link; the browser will open the first matching saved link.\n\n" +
+          "Full URLs, short sites like youtube.com, and normal search words also work."
       )
-      .setPositiveButton("Open Keyboard") { _, _ -> focusAddressBar() }
+      .setPositiveButton("Open Address Bar") { _, _ -> focusAddressBar() }
       .setNegativeButton("Close", null)
       .show()
   }
@@ -459,9 +507,11 @@ class BrowserActivity : AppCompatActivity() {
 
   private fun focusAddressBar() {
     setFullScreenMode(false, false)
+    refreshAddressSuggestions()
     addressBar.requestFocus()
     addressBar.setSelection(addressBar.text.length)
     showKeyboard()
+    addressBar.postDelayed({ addressBar.showDropDown() }, 200)
     ensurePointerVisible()
   }
 
@@ -471,6 +521,7 @@ class BrowserActivity : AppCompatActivity() {
 
   private fun hideKeyboardAndFocusPage() {
     (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(addressBar.windowToken, 0)
+    addressBar.dismissDropDown()
     focusWebPage()
   }
 
@@ -642,7 +693,7 @@ class BrowserActivity : AppCompatActivity() {
       "Address Bar Hints",
       "Add Bookmark",
       "Bookmarks",
-      "History",
+      "Visited Links",
       "Back in Web Page",
       "Home",
       "Open Outside",
@@ -662,7 +713,7 @@ class BrowserActivity : AppCompatActivity() {
           5 -> showAddressHints()
           6 -> addCurrentBookmark()
           7 -> showBookmarks()
-          8 -> showHistory()
+          8 -> showVisitedLinks()
           9 -> goBackOrClose()
           10 -> loadInCurrent(HOME_URL)
           11 -> openOutside(activeTab()?.url ?: HOME_URL)
@@ -731,22 +782,10 @@ class BrowserActivity : AppCompatActivity() {
     if (event.action != KeyEvent.ACTION_DOWN) return super.dispatchKeyEvent(event)
 
     when (event.keyCode) {
-      KeyEvent.KEYCODE_DPAD_UP -> {
-        movePointer(0f, -dp(28).toFloat())
-        return true
-      }
-      KeyEvent.KEYCODE_DPAD_DOWN -> {
-        movePointer(0f, dp(28).toFloat())
-        return true
-      }
-      KeyEvent.KEYCODE_DPAD_LEFT -> {
-        movePointer(-dp(28).toFloat(), 0f)
-        return true
-      }
-      KeyEvent.KEYCODE_DPAD_RIGHT -> {
-        movePointer(dp(28).toFloat(), 0f)
-        return true
-      }
+      KeyEvent.KEYCODE_DPAD_UP -> { movePointer(0f, -dp(28).toFloat()); return true }
+      KeyEvent.KEYCODE_DPAD_DOWN -> { movePointer(0f, dp(28).toFloat()); return true }
+      KeyEvent.KEYCODE_DPAD_LEFT -> { movePointer(-dp(28).toFloat(), 0f); return true }
+      KeyEvent.KEYCODE_DPAD_RIGHT -> { movePointer(dp(28).toFloat(), 0f); return true }
       KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
         if (event.repeatCount >= 6 && !longPressMenuShown) {
           showBrowserCommandMenu()
@@ -755,14 +794,8 @@ class BrowserActivity : AppCompatActivity() {
         }
         return true
       }
-      KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE -> {
-        goBackOrClose()
-        return true
-      }
-      KeyEvent.KEYCODE_SEARCH, KeyEvent.KEYCODE_GUIDE -> {
-        returnToBrowserButtons()
-        return true
-      }
+      KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE -> { goBackOrClose(); return true }
+      KeyEvent.KEYCODE_SEARCH, KeyEvent.KEYCODE_GUIDE -> { returnToBrowserButtons(); return true }
     }
     return super.dispatchKeyEvent(event)
   }
