@@ -16,6 +16,7 @@ import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
 import android.view.KeyEvent
@@ -55,6 +56,7 @@ class BrowserActivity : AppCompatActivity() {
     private const val KEY_BOOKMARKS = "bookmarks"
     private const val KEY_HISTORY = "history"
     private const val HOME_URL = "https://www.learnwithchampak.live"
+    private const val APK_URL = "https://programmer-s-picnic.github.io/json-images/tv/champak-tv.apk"
     private const val DESKTOP_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
   }
 
@@ -63,6 +65,7 @@ class BrowserActivity : AppCompatActivity() {
   private lateinit var topBar: LinearLayout
   private lateinit var webView: WebView
   private lateinit var pointer: TextView
+  private lateinit var fullScreenBackButton: Button
   private lateinit var titleText: TextView
   private lateinit var clockText: TextView
   private lateinit var statusText: TextView
@@ -74,6 +77,8 @@ class BrowserActivity : AppCompatActivity() {
   private val clockFormat = SimpleDateFormat("EEE, dd MMM yyyy • hh:mm:ss a", Locale.getDefault())
   private var pointerX = 0f
   private var pointerY = 0f
+  private var targetPointerX = 0f
+  private var targetPointerY = 0f
   private var lastEdgeScrollAt = 0L
   private var toolbarMode = false
   private var fullScreenMode = false
@@ -135,57 +140,57 @@ class BrowserActivity : AppCompatActivity() {
     topBar = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
       gravity = Gravity.CENTER_VERTICAL
-      setPadding(dp(10), dp(8), dp(10), dp(8))
+      setPadding(dp(8), dp(5), dp(8), dp(5))
       background = GradientDrawable(
         GradientDrawable.Orientation.LEFT_RIGHT,
         intArrayOf(Color.rgb(2, 31, 69), Color.rgb(6, 85, 145))
       )
     }
-    root.addView(topBar, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(if (phoneMode) 270 else 208)))
+    root.addView(topBar, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(if (phoneMode) 226 else 170)))
 
     val buttonRow = LinearLayout(this).apply {
       orientation = LinearLayout.HORIZONTAL
       gravity = Gravity.CENTER_VERTICAL
     }
-    topBar.addView(buttonRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(48)))
+    topBar.addView(buttonRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(38)))
 
     val logo = ImageView(this).apply {
       setImageResource(R.drawable.champak_installer_icon)
       adjustViewBounds = true
       scaleType = ImageView.ScaleType.CENTER_CROP
-      background = solid(Color.WHITE, dp(13))
-      setPadding(dp(3), dp(3), dp(3), dp(3))
+      background = solid(Color.WHITE, dp(10))
+      setPadding(dp(2), dp(2), dp(2), dp(2))
       isFocusable = true
       isFocusableInTouchMode = true
       contentDescription = "Open Learn With Champak"
       setOnClickListener { loadAddress(HOME_URL) }
       setOnFocusChangeListener { view, hasFocus ->
-        view.animate().scaleX(if (hasFocus) 1.08f else 1f).scaleY(if (hasFocus) 1.08f else 1f).setDuration(100).start()
+        view.animate().scaleX(if (hasFocus) 1.05f else 1f).scaleY(if (hasFocus) 1.05f else 1f).setDuration(80).start()
       }
     }
-    buttonRow.addView(logo, LinearLayout.LayoutParams(dp(46), dp(44)))
+    buttonRow.addView(logo, LinearLayout.LayoutParams(dp(36), dp(34)))
 
-    buttonRow.addView(toolbarButton("←", "Back") { goBackOrClose() }, LinearLayout.LayoutParams(0, dp(44), 1f))
-    buttonRow.addView(toolbarButton("→", "Forward") { if (webView.canGoForward()) webView.goForward() else showStatus("No forward page") }, LinearLayout.LayoutParams(0, dp(44), 1f))
-    buttonRow.addView(toolbarButton("↻", "Reload") { webView.reload() }, LinearLayout.LayoutParams(0, dp(44), 1f))
-    buttonRow.addView(toolbarButton("⌂", "Home") { finish() }, LinearLayout.LayoutParams(0, dp(44), 1f))
-    buttonRow.addView(toolbarButton("↗", "Open outside") { openOutside() }, LinearLayout.LayoutParams(0, dp(44), 1f))
+    buttonRow.addView(toolbarButton("←", "Back") { goBackOrClose() }, LinearLayout.LayoutParams(0, dp(34), 1f))
+    buttonRow.addView(toolbarButton("→", "Forward") { if (webView.canGoForward()) webView.goForward() else showStatus("No forward page") }, LinearLayout.LayoutParams(0, dp(34), 1f))
+    buttonRow.addView(toolbarButton("↻", "Reload") { webView.reload() }, LinearLayout.LayoutParams(0, dp(34), 1f))
+    buttonRow.addView(toolbarButton("⌂", "Home") { finish() }, LinearLayout.LayoutParams(0, dp(34), 1f))
+    buttonRow.addView(toolbarButton("↗", "Open outside") { openOutside() }, LinearLayout.LayoutParams(0, dp(34), 1f))
 
     val addressRow = LinearLayout(this).apply {
       orientation = LinearLayout.HORIZONTAL
       gravity = Gravity.CENTER_VERTICAL
-      setPadding(0, dp(8), 0, 0)
+      setPadding(0, dp(5), 0, 0)
     }
-    topBar.addView(addressRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(58)))
+    topBar.addView(addressRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(46)))
 
     addressBar = EditText(this).apply {
-      hint = "Blank address bar: type website or search"
-      textSize = if (phoneMode) 14f else 16f
+      hint = "Type website or search"
+      textSize = if (phoneMode) 13f else 14f
       setSingleLine(true)
       setTextColor(Color.rgb(3, 44, 84))
       setHintTextColor(Color.rgb(80, 105, 125))
-      setPadding(dp(12), 0, dp(12), 0)
-      background = solid(Color.WHITE, dp(12))
+      setPadding(dp(10), 0, dp(10), 0)
+      background = solid(Color.WHITE, dp(10))
       imeOptions = EditorInfo.IME_ACTION_GO
       isFocusable = true
       isFocusableInTouchMode = true
@@ -197,7 +202,7 @@ class BrowserActivity : AppCompatActivity() {
         false
       }
       setOnFocusChangeListener { _, hasFocus ->
-        if (hasFocus) addressBar.postDelayed({ showKeyboard() }, 120)
+        if (hasFocus) addressBar.postDelayed({ showKeyboard() }, 100)
       }
       setOnEditorActionListener { _, actionId, event ->
         if (actionId == EditorInfo.IME_ACTION_GO || event?.keyCode == KeyEvent.KEYCODE_ENTER) {
@@ -206,42 +211,43 @@ class BrowserActivity : AppCompatActivity() {
         } else false
       }
     }
-    addressRow.addView(addressBar, LinearLayout.LayoutParams(0, dp(48), 1f))
-    addressRow.addView(toolbarButton("▶", "Go") { loadAddress(addressBar.text.toString()) }, LinearLayout.LayoutParams(dp(if (phoneMode) 62 else 82), dp(48)))
+    addressRow.addView(addressBar, LinearLayout.LayoutParams(0, dp(38), 1f))
+    addressRow.addView(toolbarButton("▶", "Go") { loadAddress(addressBar.text.toString()) }, LinearLayout.LayoutParams(dp(if (phoneMode) 52 else 64), dp(38)))
 
     val browserRow = LinearLayout(this).apply {
       orientation = LinearLayout.HORIZONTAL
       gravity = Gravity.CENTER_VERTICAL
-      setPadding(0, dp(8), 0, 0)
+      setPadding(0, dp(5), 0, 0)
     }
-    topBar.addView(browserRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(52)))
+    topBar.addView(browserRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(42)))
 
-    browserRow.addView(toolbarButton("＋", "Blank") { openBlankPage(true) }, LinearLayout.LayoutParams(0, dp(46), 0.9f))
-    browserRow.addView(toolbarButton("★", "Add bookmark") { addBookmark() }, LinearLayout.LayoutParams(0, dp(46), 1f))
-    browserRow.addView(toolbarButton("☆", "Bookmarks") { showBookmarks() }, LinearLayout.LayoutParams(0, dp(46), 1f))
-    browserRow.addView(toolbarButton("◷", "History") { showHistory() }, LinearLayout.LayoutParams(0, dp(46), 1f))
-    browserRow.addView(toolbarButton("⇩", "Downloads") { openDownloads() }, LinearLayout.LayoutParams(0, dp(46), 1f))
+    browserRow.addView(toolbarButton("＋", "Blank") { openBlankPage(true) }, LinearLayout.LayoutParams(0, dp(36), 0.9f))
+    browserRow.addView(toolbarButton("★", "Add bookmark") { addBookmark() }, LinearLayout.LayoutParams(0, dp(36), 1f))
+    browserRow.addView(toolbarButton("☆", "Bookmarks") { showBookmarks() }, LinearLayout.LayoutParams(0, dp(36), 1f))
+    browserRow.addView(toolbarButton("◷", "History") { showHistory() }, LinearLayout.LayoutParams(0, dp(36), 1f))
+    browserRow.addView(toolbarButton("⇩", "Downloads") { openDownloads() }, LinearLayout.LayoutParams(0, dp(36), 1f))
+    browserRow.addView(toolbarButton("⇧", "Update app") { updateApp() }, LinearLayout.LayoutParams(0, dp(36), 1f))
 
     val helpRow = LinearLayout(this).apply {
       orientation = LinearLayout.HORIZONTAL
       gravity = Gravity.CENTER_VERTICAL
-      setPadding(0, dp(6), 0, 0)
+      setPadding(0, dp(4), 0, 0)
     }
-    topBar.addView(helpRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(38)))
-    helpRow.addView(toolbarButton("⌨", "Keyboard") { focusAddressBar(true) }, LinearLayout.LayoutParams(0, dp(34), 1f))
-    helpRow.addView(toolbarButton("▣", "Focus page") { focusWebPage() }, LinearLayout.LayoutParams(0, dp(34), 1f))
-    helpRow.addView(toolbarButton("⛶", "Full screen") { setFullScreenMode(true) }, LinearLayout.LayoutParams(0, dp(34), 1f))
+    topBar.addView(helpRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(32)))
+    helpRow.addView(toolbarButton("⌨", "Keyboard") { focusAddressBar(true) }, LinearLayout.LayoutParams(0, dp(28), 1f))
+    helpRow.addView(toolbarButton("▣", "Focus page") { focusWebPage() }, LinearLayout.LayoutParams(0, dp(28), 1f))
+    helpRow.addView(toolbarButton("⛶", "Full screen") { setFullScreenMode(true) }, LinearLayout.LayoutParams(0, dp(28), 1f))
 
     val titleClockBox = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
       gravity = Gravity.CENTER_VERTICAL or Gravity.RIGHT
-      setPadding(0, dp(6), 0, 0)
+      setPadding(0, dp(3), 0, 0)
     }
     topBar.addView(titleClockBox, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
 
     titleText = TextView(this).apply {
       text = startTitle
-      textSize = if (phoneMode) 14f else 18f
+      textSize = if (phoneMode) 12f else 15f
       setTextColor(Color.WHITE)
       typeface = Typeface.DEFAULT_BOLD
       gravity = Gravity.RIGHT
@@ -250,7 +256,7 @@ class BrowserActivity : AppCompatActivity() {
     titleClockBox.addView(titleText)
 
     clockText = TextView(this).apply {
-      textSize = if (phoneMode) 12f else 15f
+      textSize = if (phoneMode) 11f else 12f
       setTextColor(Color.rgb(255, 221, 128))
       gravity = Gravity.RIGHT
       maxLines = 1
@@ -261,7 +267,7 @@ class BrowserActivity : AppCompatActivity() {
       max = 100
       progress = 0
     }
-    root.addView(progress, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(5)))
+    root.addView(progress, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(4)))
 
     webView = WebView(this).apply {
       isFocusable = true
@@ -271,27 +277,45 @@ class BrowserActivity : AppCompatActivity() {
     root.addView(webView, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
 
     statusText = TextView(this).apply {
-      text = "Long-press OK for browser menu. Use full screen for page-only view."
-      textSize = if (phoneMode) 12f else 14f
+      text = "Long-press OK for menu. Full screen available. Update app available."
+      textSize = if (phoneMode) 11f else 12f
       setTextColor(Color.rgb(218, 240, 255))
       gravity = Gravity.CENTER_VERTICAL
-      setPadding(dp(12), 0, dp(12), 0)
+      setPadding(dp(10), 0, dp(10), 0)
       background = solid(Color.rgb(4, 24, 54), dp(0))
     }
-    root.addView(statusText, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(38)))
+    root.addView(statusText, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(30)))
 
     pointer = TextView(this).apply {
       text = "➤"
-      textSize = if (phoneMode) 30f else 38f
+      textSize = if (phoneMode) 23f else 27f
       setTextColor(Color.rgb(255, 221, 128))
-      setShadowLayer(10f, 0f, 0f, Color.BLACK)
+      setShadowLayer(8f, 0f, 0f, Color.BLACK)
       typeface = Typeface.DEFAULT_BOLD
       gravity = Gravity.CENTER
       elevation = dp(30).toFloat()
       isClickable = false
       isFocusable = false
     }
-    stage.addView(pointer, FrameLayout.LayoutParams(dp(56), dp(56)))
+    stage.addView(pointer, FrameLayout.LayoutParams(dp(40), dp(40)))
+
+    fullScreenBackButton = Button(this).apply {
+      text = "‹"
+      textSize = 20f
+      setTextColor(Color.WHITE)
+      typeface = Typeface.DEFAULT_BOLD
+      background = rounded(Color.argb(210, 4, 45, 98), dp(18), Color.WHITE, dp(1))
+      contentDescription = "Show controls"
+      visibility = View.GONE
+      isFocusable = true
+      isFocusableInTouchMode = true
+      setPadding(0, 0, 0, dp(2))
+      setOnClickListener { setFullScreenMode(false); focusToolbar() }
+    }
+    stage.addView(fullScreenBackButton, FrameLayout.LayoutParams(dp(38), dp(38), Gravity.TOP or Gravity.LEFT).apply {
+      leftMargin = dp(8)
+      topMargin = dp(8)
+    })
 
     setContentView(stage)
 
@@ -331,6 +355,10 @@ class BrowserActivity : AppCompatActivity() {
           openExternalUrl(target)
           return true
         }
+        if (target.lowercase(Locale.ROOT).endsWith(".apk")) {
+          updateApp()
+          return true
+        }
         view.settings.userAgentString = DESKTOP_USER_AGENT
         view.loadUrl(target)
         return true
@@ -340,6 +368,10 @@ class BrowserActivity : AppCompatActivity() {
       override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
         if (url.startsWith("tel:") || url.startsWith("mailto:") || url.startsWith("whatsapp:")) {
           openExternalUrl(url)
+          return true
+        }
+        if (url.lowercase(Locale.ROOT).endsWith(".apk")) {
+          updateApp()
           return true
         }
         view.settings.userAgentString = DESKTOP_USER_AGENT
@@ -352,7 +384,7 @@ class BrowserActivity : AppCompatActivity() {
         titleText.text = if (url == "about:blank") "Blank Browser" else title
         if (url == "about:blank") addressBar.setText("") else addressBar.setText(url)
         if (url != "about:blank") addHistory(title, url)
-        showStatus("Desktop page mode. Pointer is synced. Full screen available.")
+        showStatus("Desktop page mode. Small smooth pointer. Full screen available.")
         progress.progress = 0
       }
 
@@ -377,18 +409,18 @@ class BrowserActivity : AppCompatActivity() {
     return Button(this).apply {
       text = icon
       contentDescription = description
-      textSize = 22f
+      textSize = 17f
       isAllCaps = false
       setTextColor(Color.WHITE)
       typeface = Typeface.DEFAULT_BOLD
       background = buttonBg(false)
       isFocusable = true
       isFocusableInTouchMode = true
-      setPadding(dp(2), 0, dp(2), 0)
+      setPadding(dp(1), 0, dp(1), 0)
 
       setOnFocusChangeListener { view, hasFocus ->
         background = buttonBg(hasFocus)
-        view.animate().scaleX(if (hasFocus) 1.06f else 1f).scaleY(if (hasFocus) 1.06f else 1f).setDuration(100).start()
+        view.animate().scaleX(if (hasFocus) 1.04f else 1f).scaleY(if (hasFocus) 1.04f else 1f).setDuration(80).start()
         if (hasFocus) showStatus(description)
       }
 
@@ -403,7 +435,7 @@ class BrowserActivity : AppCompatActivity() {
     titleText.text = "Blank Browser"
     addressBar.setText("")
     showStatus("Blank address bar ready. Start typing a website or search.")
-    if (showKeyboardAfterOpen) addressBar.postDelayed({ focusAddressBar(true) }, 220)
+    if (showKeyboardAfterOpen) addressBar.postDelayed({ focusAddressBar(true) }, 200)
   }
 
   private fun loadAddress(input: String) {
@@ -456,7 +488,7 @@ class BrowserActivity : AppCompatActivity() {
     pointer.visibility = View.VISIBLE
     pointer.bringToFront()
     syncPointerModelFromView()
-    showStatus(if (fullScreenMode) "Full screen web page. Menu or long-press OK shows controls." else "Web page mode. Long-press OK for menu; Search key returns to buttons.")
+    showStatus(if (fullScreenMode) "Full screen. Use ‹, Back, Menu or long-press OK for controls." else "Web page mode. Long-press OK for menu; Search key returns to buttons.")
   }
 
   private fun focusToolbar() {
@@ -478,6 +510,7 @@ class BrowserActivity : AppCompatActivity() {
     topBar.visibility = if (enabled) View.GONE else View.VISIBLE
     progress.visibility = if (enabled) View.GONE else View.VISIBLE
     statusText.visibility = if (enabled) View.GONE else View.VISIBLE
+    if (::fullScreenBackButton.isInitialized) fullScreenBackButton.visibility = if (enabled) View.VISIBLE else View.GONE
     window.decorView.systemUiVisibility = if (enabled) {
       View.SYSTEM_UI_FLAG_FULLSCREEN or
         View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
@@ -491,6 +524,7 @@ class BrowserActivity : AppCompatActivity() {
     webView.post {
       placePointerInWebPage()
       focusWebPage()
+      if (::fullScreenBackButton.isInitialized) fullScreenBackButton.bringToFront()
     }
   }
 
@@ -510,6 +544,22 @@ class BrowserActivity : AppCompatActivity() {
       return
     }
     openExternalUrl(url)
+  }
+
+  private fun updateApp() {
+    try {
+      Toast.makeText(this, "Opening latest APK update", Toast.LENGTH_LONG).show()
+      startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(APK_URL)).apply {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      })
+    } catch (ex: Exception) {
+      Log.e(tag, "Could not open APK update link", ex)
+      try {
+        startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+      } catch (_: Exception) {
+        Toast.makeText(this, "Open this link manually: $APK_URL", Toast.LENGTH_LONG).show()
+      }
+    }
   }
 
   private fun openExternalUrl(url: String) {
@@ -625,7 +675,7 @@ class BrowserActivity : AppCompatActivity() {
   }
 
   private fun showStatus(message: String) {
-    if (::statusText.isInitialized) statusText.text = message
+    if (::statusText.isInitialized && statusText.visibility == View.VISIBLE) statusText.text = message
   }
 
   private fun isOkKey(keyCode: Int): Boolean {
@@ -663,6 +713,8 @@ class BrowserActivity : AppCompatActivity() {
       if (fullScreenMode) "Show Controls" else "Full Screen Web Page",
       "Return to Buttons",
       "Open Keyboard",
+      "Update App",
+      "Allow APK Installation",
       "Open Learn With Champak",
       "Exit Browser",
       "Cancel"
@@ -674,13 +726,24 @@ class BrowserActivity : AppCompatActivity() {
           0 -> if (fullScreenMode) focusToolbar() else setFullScreenMode(true)
           1 -> focusToolbar()
           2 -> focusAddressBar(true)
-          3 -> loadAddress(HOME_URL)
-          4 -> finish()
+          3 -> updateApp()
+          4 -> openInstallPermissionSettings()
+          5 -> loadAddress(HOME_URL)
+          6 -> finish()
           else -> dialog.dismiss()
         }
       }
       .show()
     showStatus("Browser menu opened")
+  }
+
+  private fun openInstallPermissionSettings() {
+    try {
+      startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+    } catch (ex: Exception) {
+      Toast.makeText(this, "Open Settings > Install unknown apps", Toast.LENGTH_LONG).show()
+      Log.e(tag, "Could not open install permission settings", ex)
+    }
   }
 
   override fun dispatchTouchEvent(event: MotionEvent): Boolean {
@@ -696,6 +759,8 @@ class BrowserActivity : AppCompatActivity() {
           pointer.visibility = View.VISIBLE
           pointerX = (event.x - pointer.width / 2f).coerceIn(0f, (stage.width - pointer.width).toFloat())
           pointerY = (event.y - pointer.height / 2f).coerceIn(0f, (stage.height - pointer.height).toFloat())
+          targetPointerX = pointerX
+          targetPointerY = pointerY
           updatePointerPosition(false)
           autoScrollWebAtPointerEdges(0)
         }
@@ -758,15 +823,17 @@ class BrowserActivity : AppCompatActivity() {
       return
     }
 
-    val step = dp(24).toFloat()
+    val step = dp(16).toFloat()
     val maxX = (stage.width - pointer.width).coerceAtLeast(0).toFloat()
     val maxY = (stage.height - pointer.height).coerceAtLeast(0).toFloat()
-    pointerX = (pointerX + dx * step).coerceIn(0f, maxX)
-    pointerY = (pointerY + dy * step).coerceIn(0f, maxY)
+    targetPointerX = (pointerX + dx * step).coerceIn(0f, maxX)
+    targetPointerY = (pointerY + dy * step).coerceIn(0f, maxY)
+    pointerX = targetPointerX
+    pointerY = targetPointerY
     keepPointerNearWebArea()
-    updatePointerPosition(false)
+    updatePointerPosition(true)
     val scrolled = autoScrollWebAtPointerEdges(dy)
-    showStatus(if (scrolled) "Scrolling desktop web page" else "Pointer synced. Long-press OK for menu.")
+    showStatus(if (scrolled) "Scrolling desktop web page" else "Smooth pointer. Long-press OK for menu.")
   }
 
   private fun clickAtPointer() {
@@ -807,23 +874,25 @@ class BrowserActivity : AppCompatActivity() {
     val rect = webRectOnStage()
     if (rect.height() <= 0) return false
     syncPointerModelFromView()
-    val edge = dp(72)
+    val edge = dp(if (fullScreenMode) 58 else 64)
     val centerY = (pointerY + pointer.height / 2f).toInt()
     val nearTop = centerY <= rect.top + edge
     val nearBottom = centerY >= rect.bottom - edge
-    val scrollAmount = dp(220)
+    val scrollAmount = dp(180)
 
     return when {
       (dy < 0 || nearTop) && nearTop -> {
         performPageScroll(-scrollAmount)
         pointerY = (rect.top + edge + 8).toFloat().coerceAtMost((rect.bottom - pointer.height).toFloat())
-        updatePointerPosition(false)
+        targetPointerY = pointerY
+        updatePointerPosition(true)
         true
       }
       (dy > 0 || nearBottom) && nearBottom -> {
         performPageScroll(scrollAmount)
         pointerY = (rect.bottom - edge - pointer.height - 8).toFloat().coerceAtLeast(rect.top.toFloat())
-        updatePointerPosition(false)
+        targetPointerY = pointerY
+        updatePointerPosition(true)
         true
       }
       else -> false
@@ -832,7 +901,7 @@ class BrowserActivity : AppCompatActivity() {
 
   private fun performPageScroll(amount: Int) {
     val now = SystemClock.uptimeMillis()
-    if (now - lastEdgeScrollAt < 70) return
+    if (now - lastEdgeScrollAt < 80) return
     lastEdgeScrollAt = now
     webView.scrollBy(0, amount)
     val js = """
@@ -857,7 +926,7 @@ class BrowserActivity : AppCompatActivity() {
   private fun pointerAtVeryTopOfWeb(): Boolean {
     val rect = webRectOnStage()
     val centerY = pointer.y + pointer.height / 2f
-    return centerY <= rect.top + dp(38)
+    return centerY <= rect.top + dp(28)
   }
 
   private fun keepPointerNearWebArea() {
@@ -866,12 +935,15 @@ class BrowserActivity : AppCompatActivity() {
     val maxY = (rect.bottom - pointer.height).coerceAtLeast(rect.top).toFloat()
     if (pointerY < minY) pointerY = minY
     if (pointerY > maxY) pointerY = maxY
+    targetPointerY = pointerY
   }
 
   private fun placePointerInWebPage() {
     val rect = webRectOnStage()
     pointerX = (rect.left + rect.width() * 0.50f - pointer.width / 2f).coerceIn(0f, (stage.width - pointer.width).toFloat())
     pointerY = (rect.top + rect.height() * 0.50f - pointer.height / 2f).coerceIn(0f, (stage.height - pointer.height).toFloat())
+    targetPointerX = pointerX
+    targetPointerY = pointerY
     updatePointerPosition(false)
   }
 
@@ -903,14 +975,23 @@ class BrowserActivity : AppCompatActivity() {
     if (::pointer.isInitialized) {
       pointerX = pointer.x
       pointerY = pointer.y
+      targetPointerX = pointerX
+      targetPointerY = pointerY
     }
   }
 
   private fun updatePointerPosition(animated: Boolean) {
     pointer.animate().cancel()
-    pointer.x = pointerX
-    pointer.y = pointerY
+    if (animated) {
+      pointer.animate().x(pointerX).y(pointerY).setDuration(75).withEndAction {
+        syncPointerModelFromView()
+      }.start()
+    } else {
+      pointer.x = pointerX
+      pointer.y = pointerY
+    }
     pointer.bringToFront()
+    if (::fullScreenBackButton.isInitialized && fullScreenMode) fullScreenBackButton.bringToFront()
   }
 
   private fun buttonBg(focused: Boolean): GradientDrawable {
@@ -920,8 +1001,8 @@ class BrowserActivity : AppCompatActivity() {
       intArrayOf(Color.rgb(8, 77, 138), Color.rgb(4, 45, 98))
     }
     return GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, colors).apply {
-      cornerRadius = dp(14).toFloat()
-      setStroke(dp(if (focused) 3 else 1), if (focused) Color.WHITE else Color.rgb(82, 204, 255))
+      cornerRadius = dp(10).toFloat()
+      setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else Color.rgb(82, 204, 255))
     }
   }
 
@@ -929,6 +1010,14 @@ class BrowserActivity : AppCompatActivity() {
     return GradientDrawable().apply {
       setColor(color)
       cornerRadius = radius.toFloat()
+    }
+  }
+
+  private fun rounded(color: Int, radius: Int, strokeColor: Int, strokeWidth: Int): GradientDrawable {
+    return GradientDrawable().apply {
+      setColor(color)
+      cornerRadius = radius.toFloat()
+      if (strokeWidth > 0) setStroke(strokeWidth, strokeColor)
     }
   }
 
