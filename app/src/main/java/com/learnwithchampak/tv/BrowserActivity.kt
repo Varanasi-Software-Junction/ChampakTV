@@ -99,7 +99,7 @@ class BrowserActivity : AppCompatActivity() {
       gravity = Gravity.CENTER_VERTICAL
     }
     top.addView(titleText, LinearLayout.LayoutParams(0, -1, 1f))
-    top.addView(btn("▦", "Return to Buttons") { returnToButtons() })
+    top.addView(btn("▦", "Return to first screen") { returnToFirstScreen() })
     top.addView(btn("＋", "New tab") { newTab(HOME_URL) })
     top.addView(btn("▤", "Tabs") { showTabs() })
     top.addView(btn("×", "Close tab") { closeCurrentTab() })
@@ -136,7 +136,7 @@ class BrowserActivity : AppCompatActivity() {
 
     val tools = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
     header.addView(tools, LinearLayout.LayoutParams(-1, dp(38)))
-    tools.addView(btn("Buttons", "Return to first buttons screen") { returnToButtons() }, LinearLayout.LayoutParams(0, -1, 1f))
+    tools.addView(btn("First", "Return to first app screen") { returnToFirstScreen() }, LinearLayout.LayoutParams(0, -1, 1f))
     tools.addView(btn("Page", "Focus web page") { focusWebPage() }, LinearLayout.LayoutParams(0, -1, 1f))
     tools.addView(btn("Keys", "Open keyboard") { focusAddressBar() }, LinearLayout.LayoutParams(0, -1, 1f))
     tools.addView(btn("Google", "Google sign-in outside") { openGoogleSignIn() }, LinearLayout.LayoutParams(0, -1, 1f))
@@ -473,7 +473,8 @@ class BrowserActivity : AppCompatActivity() {
   private fun showBrowserCommandMenu() {
     longPressMenuShown = true
     val options = arrayOf(
-      "Return to Buttons / First Screen",
+      "Return to Browser Buttons",
+      "Return to First Screen",
       if (fullScreen) "Show Controls" else "Full Screen Web Page",
       "Focus Web Page / Pointer",
       "Open Keyboard / Address Bar",
@@ -488,14 +489,15 @@ class BrowserActivity : AppCompatActivity() {
       .setItems(options) { _, which ->
         longPressMenuShown = false
         when (which) {
-          0 -> returnToButtons()
-          1 -> setFullScreenMode(!fullScreen, true)
-          2 -> focusWebPage()
-          3 -> focusAddressBar()
-          4 -> goBackOrClose()
-          5 -> loadInCurrent(HOME_URL)
-          6 -> openOutside(activeTab()?.url ?: HOME_URL)
-          7 -> finish()
+          0 -> returnToBrowserButtons()
+          1 -> returnToFirstScreen()
+          2 -> setFullScreenMode(!fullScreen, true)
+          3 -> focusWebPage()
+          4 -> focusAddressBar()
+          5 -> goBackOrClose()
+          6 -> loadInCurrent(HOME_URL)
+          7 -> openOutside(activeTab()?.url ?: HOME_URL)
+          8 -> finish()
         }
       }
       .setOnCancelListener { longPressMenuShown = false }
@@ -513,10 +515,18 @@ class BrowserActivity : AppCompatActivity() {
         return
       }
     }
-    returnToButtons()
+    returnToFirstScreen()
   }
 
-  private fun returnToButtons() {
+  private fun returnToBrowserButtons() {
+    setFullScreenMode(false, false)
+    header.visibility = View.VISIBLE
+    activeWebView()?.requestFocus()
+    ensurePointerVisible()
+    Toast.makeText(this, "Browser buttons are visible", Toast.LENGTH_SHORT).show()
+  }
+
+  private fun returnToFirstScreen() {
     setFullScreenMode(false, false)
     finish()
   }
@@ -577,7 +587,7 @@ class BrowserActivity : AppCompatActivity() {
         return true
       }
       KeyEvent.KEYCODE_SEARCH, KeyEvent.KEYCODE_GUIDE -> {
-        returnToButtons()
+        returnToBrowserButtons()
         return true
       }
     }
