@@ -135,10 +135,10 @@ class BrowserActivity : AppCompatActivity() {
     val dialog = AlertDialog.Builder(this)
       .setTitle("Previous browsing session found")
       .setMessage(
-        "\${count} \${if (count == 1) "tab was" else "tabs were"} still open.\n\n" +
+        "${count} ${if (count == 1) "tab was" else "tabs were"} still open.\n\n" +
           "Reopen them, or discard the old session and start fresh?"
       )
-      .setPositiveButton("REOPEN \${count} \${if (count == 1) "TAB" else "TABS"}") { _, _ ->
+      .setPositiveButton("REOPEN ${count} ${if (count == 1) "TAB" else "TABS"}") { _, _ ->
         restoringSession = true
         try {
           savedUrls.forEach { newTab(it) }
