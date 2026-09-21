@@ -47,6 +47,8 @@ class BrowserActivity : AppCompatActivity() {
     private const val KEY_DEFAULT_ASKED = "default_asked_browser"
     private const val KEY_BOOKMARKS = "browser_bookmarks"
     private const val KEY_HISTORY = "browser_history"
+    private const val KEY_OPEN_TABS = "browser_open_tabs"
+    private const val KEY_CURRENT_TAB = "browser_current_tab"
     private const val MAX_HISTORY = 80
     private const val DESKTOP_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
   }
@@ -69,6 +71,7 @@ class BrowserActivity : AppCompatActivity() {
   private var pointerX = 0f
   private var pointerY = 0f
   private var longPressMenuShown = false
+  private var restoringSession = false
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
@@ -77,20 +80,92 @@ class BrowserActivity : AppCompatActivity() {
     CookieManager.getInstance().flush()
     if (resources.configuration.screenWidthDp >= 700) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
     buildUi()
-    val startUrl = intent?.data?.toString().orEmpty().ifBlank { intent.getStringExtra(EXTRA_URL).orEmpty() }.ifBlank { HOME_URL }
-    newTab(startUrl)
+    val requestedUrl = intent?.data?.toString().orEmpty().ifBlank { intent.getStringExtra(EXTRA_URL).orEmpty() }
+    restorePreviousSessionOrStartFresh(requestedUrl.takeIf { it.isNotBlank() })
     askDefaultBrowserOnFirstRun()
   }
 
   override fun onPause() {
+    saveOpenTabs()
     CookieManager.getInstance().flush()
     super.onPause()
   }
 
   override fun onDestroy() {
+    saveOpenTabs()
     CookieManager.getInstance().flush()
     tabs.forEach { it.webView.destroy() }
     super.onDestroy()
+  }
+
+  private fun savedSessionUrls(): List<String> {
+    return prefs.getString(KEY_OPEN_TABS, "").orEmpty()
+      .lines()
+      .map { it.trim() }
+      .filter { it.isNotEmpty() }
+  }
+
+  private fun saveOpenTabs() {
+    if (restoringSession || tabs.isEmpty()) return
+    prefs.edit()
+      .putString(KEY_OPEN_TABS, tabs.joinToString("\n") { it.url.ifBlank { "about:blank" } })
+      .putInt(KEY_CURRENT_TAB, currentIndex.coerceAtLeast(0))
+      .apply()
+  }
+
+  private fun clearSavedSession() {
+    prefs.edit()
+      .remove(KEY_OPEN_TABS)
+      .remove(KEY_CURRENT_TAB)
+      .apply()
+  }
+
+  private fun restorePreviousSessionOrStartFresh(requestedUrl: String?) {
+    val savedUrls = savedSessionUrls()
+    val hasUsefulSession = savedUrls.any { it != "about:blank" }
+
+    if (!hasUsefulSession) {
+      clearSavedSession()
+      newTab(requestedUrl ?: HOME_URL)
+      return
+    }
+
+    val savedCurrent = prefs.getInt(KEY_CURRENT_TAB, 0)
+    val count = savedUrls.size
+    val dialog = AlertDialog.Builder(this)
+      .setTitle("Previous browsing session found")
+      .setMessage(
+        "\${count} \${if (count == 1) "tab was" else "tabs were"} still open.\n\n" +
+          "Reopen them, or discard the old session and start fresh?"
+      )
+      .setPositiveButton("REOPEN \${count} \${if (count == 1) "TAB" else "TABS"}") { _, _ ->
+        restoringSession = true
+        try {
+          savedUrls.forEach { newTab(it) }
+          if (tabs.isNotEmpty()) switchTo(savedCurrent.coerceIn(0, tabs.lastIndex))
+        } finally {
+          restoringSession = false
+        }
+
+        if (!requestedUrl.isNullOrBlank() && savedUrls.none { it == requestedUrl }) {
+          newTab(requestedUrl)
+        }
+        saveOpenTabs()
+        Toast.makeText(this, "Previous tabs reopened", Toast.LENGTH_SHORT).show()
+      }
+      .setNegativeButton("DISCARD & START FRESH") { _, _ ->
+        clearSavedSession()
+        newTab(requestedUrl ?: "about:blank")
+        saveOpenTabs()
+        Toast.makeText(this, "Previous tabs discarded", Toast.LENGTH_SHORT).show()
+      }
+      .setCancelable(false)
+      .create()
+
+    dialog.setOnShowListener {
+      dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.requestFocus()
+    }
+    dialog.show()
   }
 
   private fun buildUi() {
@@ -250,6 +325,7 @@ class BrowserActivity : AppCompatActivity() {
           activeTabFor(view)?.title = title.ifBlank { activeTabFor(view)?.url ?: "Page" }
           if (view == activeWebView()) titleText.text = title.ifBlank { activeTab()?.url ?: "Page" }
           refreshTabs()
+          saveOpenTabs()
         }
 
         override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
@@ -288,6 +364,7 @@ class BrowserActivity : AppCompatActivity() {
           addVisitedLink(url)
           CookieManager.getInstance().flush()
           refreshTabs()
+          saveOpenTabs()
           screen.post { ensurePointerVisible() }
         }
       }
@@ -321,6 +398,7 @@ class BrowserActivity : AppCompatActivity() {
     tabs.add(tab)
     switchTo(tabs.lastIndex)
     web.loadUrl(tab.url)
+    saveOpenTabs()
     focusWebPage()
   }
 
@@ -332,6 +410,7 @@ class BrowserActivity : AppCompatActivity() {
     titleText.text = tabs[index].title
     addressBar.setText(if (tabs[index].url == "about:blank") "" else tabs[index].url, false)
     refreshTabs()
+    saveOpenTabs()
     screen.post { ensurePointerVisible() }
   }
 
@@ -378,6 +457,7 @@ class BrowserActivity : AppCompatActivity() {
       configureWebView(it)
       it.loadUrl(url)
     }
+    saveOpenTabs()
   }
 
   private fun normalizeUrl(input: String): String {
