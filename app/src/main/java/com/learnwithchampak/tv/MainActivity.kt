@@ -22,9 +22,7 @@ import androidx.appcompat.app.AppCompatActivity
 class MainActivity : AppCompatActivity() {
   private lateinit var prefs: SharedPreferences
   private val homeUrl = "https://www.learnwithchampak.live"
-  private val apkUrl = "https://programmer-s-picnic.github.io/json-images/tv/champak-tv.apk?v=2.17"
-  private val versionUrl = "https://programmer-s-picnic.github.io/json-images/tv/champak-tv-version.json"
-  private val windowsUrl = "https://programmer-s-picnic.github.io/json-images/windows/learn-with-champak-windows-setup.exe"
+  private val insideKashiUrl = "https://insidekashi.com"
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
@@ -38,31 +36,38 @@ class MainActivity : AppCompatActivity() {
     val root = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
       gravity = Gravity.CENTER
-      setPadding(dp(24), dp(24), dp(24), dp(24))
-      background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(Color.rgb(3, 19, 46), Color.rgb(8, 74, 128), Color.rgb(2, 13, 28)))
+      setPadding(dp(28), dp(28), dp(28), dp(28))
+      background = GradientDrawable(
+        GradientDrawable.Orientation.TL_BR,
+        intArrayOf(Color.rgb(3, 19, 46), Color.rgb(8, 74, 128), Color.rgb(2, 13, 28))
+      )
     }
+
     root.addView(label("Learn With Champak", 38f, Color.WHITE, true))
-    root.addView(label("AI • ML • Python • DSA • Programming", 18f, Color.rgb(255, 221, 128), true))
-    root.addView(label("TV Remote Ready Browser and Learning Launcher", 15f, Color.rgb(218, 240, 255), false))
-    root.addView(label("Use DPAD Up/Down and OK. The selected button gets a bright border and grows.", 13f, Color.rgb(255, 250, 200), false))
-    root.addView(space(16))
+    root.addView(label("Choose what to open", 17f, Color.rgb(255, 221, 128), true))
+    root.addView(label("TV Remote: DPAD Up/Down + OK", 13f, Color.rgb(218, 240, 255), false))
+    root.addView(space(18))
 
-    val firstButton = action("Open Blank Browser", "Blank address bar + keyboard") { openInside("Blank Browser", "about:blank") }
+    val firstButton = action("1. Blank Page", "Open a clean browser with an empty address bar") {
+      openFresh("Blank Page", "about:blank")
+    }
     root.addView(firstButton)
-    root.addView(action("Learn With Champak", homeUrl) { openInside("Learn With Champak", homeUrl) })
-    root.addView(action("Google Sign-in Helper", "Open Google account page in system browser") { openExternal("https://accounts.google.com/") })
-    root.addView(action("Set As Default Browser", "Open Android Default apps screen") { openDefaultSettings() })
-    root.addView(action("Open Android APK Update", "Download latest Android APK") { openExternal(apkUrl) })
-    root.addView(action("Allow APK Install", "Open install unknown apps setting") { openInstallPermissionSettings() })
-    root.addView(action("Windows Setup EXE", "Download Windows installer") { openExternal(windowsUrl) })
-    root.addView(action("Version JSON", versionUrl) { openExternal(versionUrl) })
+    root.addView(action("2. learnwithchampak.live", "Programming • AI • ML • DSA") {
+      openFresh("Learn With Champak", homeUrl)
+    })
+    root.addView(action("3. insidekashi.com", "Kashi • Varanasi • culture and places") {
+      openFresh("Inside Kashi", insideKashiUrl)
+    })
+    root.addView(action("4. All Open Tabs", "Restore every tab from the previous browser session") {
+      openAllTabs()
+    })
 
-    root.addView(space(10))
-    root.addView(label("From browser: press Menu or long-press OK, then choose Return to Buttons.", 13f, Color.WHITE, false))
+    root.addView(space(14))
+    root.addView(label("These are the only start-screen choices. Browser tools remain inside the browser.", 13f, Color.WHITE, false))
+
     setContentView(root)
     firstButton.requestFocus()
   }
-
   private fun askDefaultOnFirstRun() {
     val key = "android_default_browser_prompted_v210"
     if (prefs.getBoolean(key, false)) return
@@ -75,26 +80,22 @@ class MainActivity : AppCompatActivity() {
       .show()
   }
 
-  private fun openInside(title: String, url: String) {
+  private fun openFresh(title: String, url: String) {
     startActivity(Intent(this, BrowserActivity::class.java).apply {
       putExtra(BrowserActivity.EXTRA_TITLE, title)
       putExtra(BrowserActivity.EXTRA_URL, url)
+      putExtra(BrowserActivity.EXTRA_START_FRESH, true)
     })
   }
 
+  private fun openAllTabs() {
+    startActivity(Intent(this, BrowserActivity::class.java).apply {
+      putExtra(BrowserActivity.EXTRA_REOPEN_ALL_TABS, true)
+    })
+  }
   private fun openDefaultSettings() {
     try { startActivity(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)) }
     catch (_: Exception) { startActivity(Intent(Settings.ACTION_SETTINGS)) }
-  }
-
-  private fun openInstallPermissionSettings() {
-    try { startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))) }
-    catch (_: Exception) { Toast.makeText(this, "Open Settings > Install unknown apps", Toast.LENGTH_LONG).show() }
-  }
-
-  private fun openExternal(url: String) {
-    try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
-    catch (_: Exception) { Toast.makeText(this, "No browser found", Toast.LENGTH_LONG).show() }
   }
 
   private fun action(title: String, sub: String, action: () -> Unit): Button = Button(this).apply {
