@@ -43,6 +43,8 @@ class BrowserActivity : AppCompatActivity() {
     const val EXTRA_URL = "com.learnwithchampak.tv.EXTRA_URL"
     const val EXTRA_TITLE = "com.learnwithchampak.tv.EXTRA_TITLE"
     const val EXTRA_TIMED_OPEN = "com.learnwithchampak.tv.EXTRA_TIMED_OPEN"
+    const val EXTRA_START_FRESH = "com.learnwithchampak.tv.EXTRA_START_FRESH"
+    const val EXTRA_REOPEN_ALL_TABS = "com.learnwithchampak.tv.EXTRA_REOPEN_ALL_TABS"
     private const val HOME_URL = "https://www.learnwithchampak.live"
     private const val GOOGLE_SIGN_IN_URL = "https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Fwww.google.com%2F&hl=en"
     private const val GOOGLE_HOME_URL = "https://www.google.com"
@@ -86,11 +88,19 @@ class BrowserActivity : AppCompatActivity() {
     buildUi()
     val requestedUrl = intent?.data?.toString().orEmpty().ifBlank { intent.getStringExtra(EXTRA_URL).orEmpty() }
     val timedOpen = intent?.getBooleanExtra(EXTRA_TIMED_OPEN, false) == true
-    if (timedOpen && requestedUrl.isNotBlank()) {
-      restoreSessionSilentlyAndOpen(requestedUrl)
-    } else {
-      restorePreviousSessionOrStartFresh(requestedUrl.takeIf { it.isNotBlank() })
+    val startFresh = intent?.getBooleanExtra(EXTRA_START_FRESH, false) == true
+    val reopenAllTabs = intent?.getBooleanExtra(EXTRA_REOPEN_ALL_TABS, false) == true
+
+    when {
+      timedOpen && requestedUrl.isNotBlank() -> restoreSessionSilentlyAndOpen(requestedUrl)
+      reopenAllTabs -> restoreSavedSessionSilently()
+      startFresh -> {
+        clearSavedSession()
+        newTab(requestedUrl.ifBlank { "about:blank" })
+      }
+      else -> restorePreviousSessionOrStartFresh(requestedUrl.takeIf { it.isNotBlank() })
     }
+
     TimedSiteScheduler.scheduleNext(this)
     askDefaultBrowserOnFirstRun()
   }
@@ -142,6 +152,27 @@ class BrowserActivity : AppCompatActivity() {
       .remove(KEY_OPEN_TABS)
       .remove(KEY_CURRENT_TAB)
       .apply()
+  }
+
+  private fun restoreSavedSessionSilently() {
+    val savedUrls = savedSessionUrls()
+    if (savedUrls.isEmpty()) {
+      newTab("about:blank")
+      Toast.makeText(this, "No saved tabs found", Toast.LENGTH_SHORT).show()
+      return
+    }
+
+    val savedCurrent = prefs.getInt(KEY_CURRENT_TAB, 0)
+    restoringSession = true
+    try {
+      savedUrls.forEach { newTab(it) }
+      if (tabs.isNotEmpty()) switchTo(savedCurrent.coerceIn(0, tabs.lastIndex))
+    } finally {
+      restoringSession = false
+    }
+
+    saveOpenTabs()
+    Toast.makeText(this, "All saved tabs reopened", Toast.LENGTH_SHORT).show()
   }
 
   private fun restoreSessionSilentlyAndOpen(requestedUrl: String) {
