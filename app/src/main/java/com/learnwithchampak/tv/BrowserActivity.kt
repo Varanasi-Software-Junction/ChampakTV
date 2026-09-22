@@ -1,6 +1,7 @@
 package com.learnwithchampak.tv
 
 import android.app.AlertDialog
+import android.app.TimePickerDialog
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
@@ -10,6 +11,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Message
 import android.provider.Settings
+import android.text.InputType
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -26,6 +28,7 @@ import android.webkit.WebViewClient
 import android.widget.ArrayAdapter
 import android.widget.AutoCompleteTextView
 import android.widget.Button
+import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -39,6 +42,7 @@ class BrowserActivity : AppCompatActivity() {
   companion object {
     const val EXTRA_URL = "com.learnwithchampak.tv.EXTRA_URL"
     const val EXTRA_TITLE = "com.learnwithchampak.tv.EXTRA_TITLE"
+    const val EXTRA_TIMED_OPEN = "com.learnwithchampak.tv.EXTRA_TIMED_OPEN"
     private const val HOME_URL = "https://www.learnwithchampak.live"
     private const val GOOGLE_SIGN_IN_URL = "https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Fwww.google.com%2F&hl=en"
     private const val GOOGLE_HOME_URL = "https://www.google.com"
@@ -81,8 +85,28 @@ class BrowserActivity : AppCompatActivity() {
     if (resources.configuration.screenWidthDp >= 700) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
     buildUi()
     val requestedUrl = intent?.data?.toString().orEmpty().ifBlank { intent.getStringExtra(EXTRA_URL).orEmpty() }
-    restorePreviousSessionOrStartFresh(requestedUrl.takeIf { it.isNotBlank() })
+    val timedOpen = intent?.getBooleanExtra(EXTRA_TIMED_OPEN, false) == true
+    if (timedOpen && requestedUrl.isNotBlank()) {
+      restoreSessionSilentlyAndOpen(requestedUrl)
+    } else {
+      restorePreviousSessionOrStartFresh(requestedUrl.takeIf { it.isNotBlank() })
+    }
+    TimedSiteScheduler.scheduleNext(this)
     askDefaultBrowserOnFirstRun()
+  }
+
+  override fun onNewIntent(intent: Intent?) {
+    super.onNewIntent(intent)
+    if (intent == null) return
+    setIntent(intent)
+    val requestedUrl = intent.data?.toString().orEmpty().ifBlank { intent.getStringExtra(EXTRA_URL).orEmpty() }
+    if (requestedUrl.isNotBlank()) {
+      newTab(requestedUrl)
+      if (intent.getBooleanExtra(EXTRA_TIMED_OPEN, false)) {
+        Toast.makeText(this, "Timed site opened automatically", Toast.LENGTH_SHORT).show()
+        TimedSiteScheduler.scheduleNext(this)
+      }
+    }
   }
 
   override fun onPause() {
@@ -118,6 +142,27 @@ class BrowserActivity : AppCompatActivity() {
       .remove(KEY_OPEN_TABS)
       .remove(KEY_CURRENT_TAB)
       .apply()
+  }
+
+  private fun restoreSessionSilentlyAndOpen(requestedUrl: String) {
+    val savedUrls = savedSessionUrls()
+    val target = normalizeUrl(requestedUrl)
+
+    restoringSession = true
+    try {
+      savedUrls.filter { it.isNotBlank() }.forEach { newTab(it) }
+      val existing = tabs.indexOfFirst { it.url == target }
+      if (existing >= 0) {
+        switchTo(existing)
+      } else {
+        newTab(target)
+      }
+    } finally {
+      restoringSession = false
+    }
+
+    saveOpenTabs()
+    Toast.makeText(this, "Timed site opened automatically", Toast.LENGTH_SHORT).show()
   }
 
   private fun restorePreviousSessionOrStartFresh(requestedUrl: String?) {
@@ -261,6 +306,7 @@ class BrowserActivity : AppCompatActivity() {
     tools.addView(btn("☆", "Bookmarks") { showBookmarks() }, LinearLayout.LayoutParams(0, -1, 1f))
     tools.addView(btn("◷", "Visited") { showVisitedLinks() }, LinearLayout.LayoutParams(0, -1, 1f))
     tools.addView(btn("?", "Address bar hints") { showAddressHints() }, LinearLayout.LayoutParams(0, -1, 1f))
+    tools.addView(btn("Time", "Timed site open") { showTimedSiteMenu() }, LinearLayout.LayoutParams(0, -1, 1f))
     tools.addView(btn("Out", "Open outside") { openOutside(activeTab()?.url ?: HOME_URL) }, LinearLayout.LayoutParams(0, -1, 1f))
     tools.addView(btn("Upd", "Update app") { openOutside(APK_URL) }, LinearLayout.LayoutParams(0, -1, 1f))
 
@@ -588,6 +634,121 @@ class BrowserActivity : AppCompatActivity() {
       .show()
   }
 
+  private fun showTimedSiteMenu() {
+    val options = arrayOf(
+      "Daily at a fixed time",
+      "Repeat every N minutes",
+      "Disable timed opening"
+    )
+    AlertDialog.Builder(this)
+      .setTitle("Timed Site Open")
+      .setMessage("Current: ${TimedSiteScheduler.summary(this)}")
+      .setItems(options) { _, which ->
+        when (which) {
+          0 -> showDailyTimedSiteDialog()
+          1 -> showIntervalTimedSiteDialog()
+          2 -> {
+            TimedSiteScheduler.disable(this)
+            Toast.makeText(this, "Timed site opening disabled", Toast.LENGTH_LONG).show()
+          }
+        }
+      }
+      .setNegativeButton("Close", null)
+      .show()
+  }
+
+  private fun showDailyTimedSiteDialog() {
+    val urlInput = EditText(this).apply {
+      hint = "https://example.com"
+      setSingleLine(true)
+      setText(
+        TimedSiteScheduler.currentUrl(this@BrowserActivity).ifBlank {
+          activeTab()?.url?.takeIf { it != "about:blank" } ?: HOME_URL
+        }
+      )
+      selectAll()
+    }
+
+    AlertDialog.Builder(this)
+      .setTitle("Daily Timed Site")
+      .setMessage("Enter the site, then choose the daily opening time.")
+      .setView(urlInput)
+      .setPositiveButton("Choose Time") { _, _ ->
+        val url = normalizeUrl(urlInput.text.toString())
+        if (!(url.startsWith("http://") || url.startsWith("https://"))) {
+          Toast.makeText(this, "Enter a valid website URL", Toast.LENGTH_LONG).show()
+          return@setPositiveButton
+        }
+        TimePickerDialog(
+          this,
+          { _, hour, minute ->
+            TimedSiteScheduler.saveDaily(this, url, hour, minute)
+            Toast.makeText(
+              this,
+              "Scheduled daily at %02d:%02d".format(hour, minute),
+              Toast.LENGTH_LONG
+            ).show()
+          },
+          TimedSiteScheduler.currentHour(this),
+          TimedSiteScheduler.currentMinute(this),
+          true
+        ).show()
+      }
+      .setNegativeButton("Cancel", null)
+      .show()
+  }
+
+  private fun showIntervalTimedSiteDialog() {
+    val box = LinearLayout(this).apply {
+      orientation = LinearLayout.VERTICAL
+      setPadding(dp(20), dp(8), dp(20), 0)
+    }
+    val urlInput = EditText(this).apply {
+      hint = "https://example.com"
+      setSingleLine(true)
+      setText(
+        TimedSiteScheduler.currentUrl(this@BrowserActivity).ifBlank {
+          activeTab()?.url?.takeIf { it != "about:blank" } ?: HOME_URL
+        }
+      )
+    }
+    val intervalInput = EditText(this).apply {
+      hint = "Minutes, e.g. 30"
+      inputType = InputType.TYPE_CLASS_NUMBER
+      setSingleLine(true)
+      setText(TimedSiteScheduler.currentInterval(this@BrowserActivity).toString())
+    }
+    box.addView(urlInput, LinearLayout.LayoutParams(-1, -2))
+    box.addView(intervalInput, LinearLayout.LayoutParams(-1, -2))
+
+    val dialog = AlertDialog.Builder(this)
+      .setTitle("Repeat Timed Site")
+      .setMessage("Open this site repeatedly at the selected interval.")
+      .setView(box)
+      .setPositiveButton("Save", null)
+      .setNegativeButton("Cancel", null)
+      .create()
+
+    dialog.setOnShowListener {
+      dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+        val url = normalizeUrl(urlInput.text.toString())
+        val minutes = intervalInput.text.toString().toIntOrNull() ?: 0
+        if (!(url.startsWith("http://") || url.startsWith("https://"))) {
+          Toast.makeText(this, "Enter a valid website URL", Toast.LENGTH_LONG).show()
+          return@setOnClickListener
+        }
+        if (minutes !in 1..10080) {
+          Toast.makeText(this, "Interval must be 1 to 10080 minutes", Toast.LENGTH_LONG).show()
+          return@setOnClickListener
+        }
+        TimedSiteScheduler.saveInterval(this, url, minutes)
+        Toast.makeText(this, "Scheduled every $minutes minutes", Toast.LENGTH_LONG).show()
+        dialog.dismiss()
+      }
+    }
+    dialog.show()
+  }
+
   private fun showAddressHints() {
     AlertDialog.Builder(this)
       .setTitle("Address Bar Hints")
@@ -834,6 +995,7 @@ class BrowserActivity : AppCompatActivity() {
       "Add Bookmark",
       "Bookmarks",
       "Visited Links",
+      "Timed Site Open",
       "Back in Web Page",
       "Home",
       "Open Outside",
@@ -856,10 +1018,11 @@ class BrowserActivity : AppCompatActivity() {
           8 -> addCurrentBookmark()
           9 -> showBookmarks()
           10 -> showVisitedLinks()
-          11 -> goBackOrClose()
-          12 -> loadInCurrent(HOME_URL)
-          13 -> openOutside(activeTab()?.url ?: HOME_URL)
-          14 -> finish()
+          11 -> showTimedSiteMenu()
+          12 -> goBackOrClose()
+          13 -> loadInCurrent(HOME_URL)
+          14 -> openOutside(activeTab()?.url ?: HOME_URL)
+          15 -> finish()
         }
       }
       .setOnCancelListener { longPressMenuShown = false }
