@@ -29,7 +29,6 @@ class MainActivity : AppCompatActivity() {
     prefs = getSharedPreferences("champak_browser_prefs", Context.MODE_PRIVATE)
     if (resources.configuration.screenWidthDp >= 700) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
     buildScreen()
-    askDefaultOnFirstRun()
   }
 
   private fun buildScreen() {
