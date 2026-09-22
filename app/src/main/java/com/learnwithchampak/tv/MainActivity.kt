@@ -22,7 +22,7 @@ import androidx.appcompat.app.AppCompatActivity
 class MainActivity : AppCompatActivity() {
   private lateinit var prefs: SharedPreferences
   private val homeUrl = "https://www.learnwithchampak.live"
-  private val apkUrl = "https://programmer-s-picnic.github.io/json-images/tv/champak-tv.apk?v=2.16"
+  private val apkUrl = "https://programmer-s-picnic.github.io/json-images/tv/champak-tv.apk?v=2.17"
   private val versionUrl = "https://programmer-s-picnic.github.io/json-images/tv/champak-tv-version.json"
   private val windowsUrl = "https://programmer-s-picnic.github.io/json-images/windows/learn-with-champak-windows-setup.exe"
 
