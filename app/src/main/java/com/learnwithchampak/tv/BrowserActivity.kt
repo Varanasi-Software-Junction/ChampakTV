@@ -1,6 +1,7 @@
 package com.learnwithchampak.tv
 
 import android.app.AlertDialog
+import android.app.DownloadManager
 import android.app.TimePickerDialog
 import android.content.Context
 import android.content.Intent
@@ -9,6 +10,7 @@ import android.content.pm.ActivityInfo
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
 import android.os.Message
 import android.provider.Settings
 import android.text.InputType
@@ -22,6 +24,7 @@ import android.view.inputmethod.InputMethodManager
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
+import android.webkit.URLUtil
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -55,6 +58,7 @@ class BrowserActivity : AppCompatActivity() {
     private const val KEY_HISTORY = "browser_history"
     private const val KEY_OPEN_TABS = "browser_open_tabs"
     private const val KEY_CURRENT_TAB = "browser_current_tab"
+    private const val KEY_LAST_DOWNLOAD_ID = "browser_last_download_id"
     private const val MAX_HISTORY = 80
     private const val DESKTOP_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
   }
@@ -278,6 +282,8 @@ class BrowserActivity : AppCompatActivity() {
     top.addView(btn("＋", "New tab") { newTab(HOME_URL) })
     top.addView(btn("▤", "Tabs") { showTabs() })
     top.addView(btn("×", "Close tab") { closeCurrentTab() })
+    top.addView(btn("↓", "Download current file or page") { downloadCurrentUrl() })
+    top.addView(btn("File", "Open last downloaded file") { openLastDownloadedFile() })
     top.addView(btn("⛶", "Full screen") { setFullScreenMode(true, true) })
 
     val nav = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
@@ -426,6 +432,10 @@ class BrowserActivity : AppCompatActivity() {
           }
         }
       }
+      setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
+        enqueueDownload(url, userAgent, contentDisposition, mimeType)
+      }
+
       webViewClient = object : WebViewClient() {
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
           val url = request.url.toString()
@@ -569,6 +579,82 @@ class BrowserActivity : AppCompatActivity() {
       startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     } catch (_: Exception) {
       Toast.makeText(this, "No outside browser/app found", Toast.LENGTH_LONG).show()
+    }
+  }
+
+  private fun downloadCurrentUrl() {
+    val url = activeTab()?.url.orEmpty()
+    if (!(url.startsWith("http://") || url.startsWith("https://"))) {
+      Toast.makeText(this, "Open a downloadable web address first", Toast.LENGTH_LONG).show()
+      return
+    }
+    enqueueDownload(url, DESKTOP_USER_AGENT, null, null)
+  }
+
+  private fun enqueueDownload(
+    url: String,
+    userAgent: String?,
+    contentDisposition: String?,
+    mimeType: String?
+  ) {
+    if (!(url.startsWith("http://") || url.startsWith("https://"))) {
+      Toast.makeText(this, "This link cannot be downloaded", Toast.LENGTH_LONG).show()
+      return
+    }
+
+    try {
+      val fileName = URLUtil.guessFileName(url, contentDisposition, mimeType)
+      val request = DownloadManager.Request(Uri.parse(url)).apply {
+        setTitle(fileName)
+        setDescription("Downloading with Learn With Champak")
+        setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+        setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+        if (!mimeType.isNullOrBlank()) setMimeType(mimeType)
+        if (!userAgent.isNullOrBlank()) addRequestHeader("User-Agent", userAgent)
+        val cookies = CookieManager.getInstance().getCookie(url)
+        if (!cookies.isNullOrBlank()) addRequestHeader("Cookie", cookies)
+      }
+
+      val manager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+      val id = manager.enqueue(request)
+      prefs.edit().putLong(KEY_LAST_DOWNLOAD_ID, id).apply()
+      Toast.makeText(this, "Downloading " + fileName, Toast.LENGTH_LONG).show()
+    } catch (e: Exception) {
+      Toast.makeText(this, "Download failed: " + (e.message ?: "unknown error"), Toast.LENGTH_LONG).show()
+    }
+  }
+
+  private fun openLastDownloadedFile() {
+    val id = prefs.getLong(KEY_LAST_DOWNLOAD_ID, -1L)
+    if (id < 0L) {
+      openDownloadsFolder()
+      return
+    }
+
+    try {
+      val manager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+      val uri = manager.getUriForDownloadedFile(id)
+      if (uri == null) {
+        Toast.makeText(this, "The last download is not ready yet", Toast.LENGTH_LONG).show()
+        openDownloadsFolder()
+        return
+      }
+
+      val mime = manager.getMimeTypeForDownloadedFile(id) ?: "*/*"
+      startActivity(Intent(Intent.ACTION_VIEW).apply {
+        setDataAndType(uri, mime)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+      })
+    } catch (_: Exception) {
+      openDownloadsFolder()
+    }
+  }
+
+  private fun openDownloadsFolder() {
+    try {
+      startActivity(Intent(DownloadManager.ACTION_VIEW_DOWNLOADS))
+    } catch (_: Exception) {
+      Toast.makeText(this, "No Downloads app is available on this device", Toast.LENGTH_LONG).show()
     }
   }
 
@@ -1030,6 +1116,8 @@ class BrowserActivity : AppCompatActivity() {
       "Back in Web Page",
       "Home",
       "Open Outside",
+      "Download Current File/Page",
+      "Open Last Downloaded File",
       "Exit Browser",
       "Cancel"
     )
@@ -1053,7 +1141,9 @@ class BrowserActivity : AppCompatActivity() {
           12 -> goBackOrClose()
           13 -> loadInCurrent(HOME_URL)
           14 -> openOutside(activeTab()?.url ?: HOME_URL)
-          15 -> finish()
+          15 -> downloadCurrentUrl()
+          16 -> openLastDownloadedFile()
+          17 -> finish()
         }
       }
       .setOnCancelListener { longPressMenuShown = false }
