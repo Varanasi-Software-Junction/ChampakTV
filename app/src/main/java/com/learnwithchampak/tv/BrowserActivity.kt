@@ -8,7 +8,10 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.ActivityInfo
 import android.graphics.Color
+import android.graphics.RenderEffect
+import android.graphics.Shader
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.os.Message
@@ -57,19 +60,26 @@ class BrowserActivity : AppCompatActivity() {
     private const val KEY_BOOKMARKS = "browser_bookmarks"
     private const val KEY_HISTORY = "browser_history"
     private const val KEY_OPEN_TABS = "browser_open_tabs"
+    private const val KEY_PRIVATE_TABS = "browser_private_tabs"
     private const val KEY_CURRENT_TAB = "browser_current_tab"
     private const val KEY_LAST_DOWNLOAD_ID = "browser_last_download_id"
     private const val MAX_HISTORY = 80
     private const val DESKTOP_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
   }
 
-  private data class BrowserTab(val webView: WebView, var title: String, var url: String)
+  private data class BrowserTab(
+    val webView: WebView,
+    var title: String,
+    var url: String,
+    var privacyBlur: Boolean = false
+  )
 
   private lateinit var screen: FrameLayout
   private lateinit var root: LinearLayout
   private lateinit var header: LinearLayout
   private lateinit var tabStrip: LinearLayout
   private lateinit var webHolder: FrameLayout
+  private lateinit var privacyOverlay: TextView
   private lateinit var pointer: TextView
   private lateinit var addressBar: AutoCompleteTextView
   private lateinit var titleText: TextView
@@ -82,6 +92,7 @@ class BrowserActivity : AppCompatActivity() {
   private var pointerY = 0f
   private var longPressMenuShown = false
   private var restoringSession = false
+  private var windowHasFocus = true
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
@@ -129,6 +140,12 @@ class BrowserActivity : AppCompatActivity() {
     super.onPause()
   }
 
+  override fun onWindowFocusChanged(hasFocus: Boolean) {
+    super.onWindowFocusChanged(hasFocus)
+    windowHasFocus = hasFocus
+    applyPrivacyState()
+  }
+
   override fun onDestroy() {
     saveOpenTabs()
     CookieManager.getInstance().flush()
@@ -143,10 +160,18 @@ class BrowserActivity : AppCompatActivity() {
       .filter { it.isNotEmpty() }
   }
 
+  private fun savedSessionPrivacy(): List<Boolean> {
+    return prefs.getString(KEY_PRIVATE_TABS, "").orEmpty()
+      .lines()
+      .filter { it.isNotEmpty() }
+      .map { it == "1" }
+  }
+
   private fun saveOpenTabs() {
     if (restoringSession || tabs.isEmpty()) return
     prefs.edit()
       .putString(KEY_OPEN_TABS, tabs.joinToString("\n") { it.url.ifBlank { "about:blank" } })
+      .putString(KEY_PRIVATE_TABS, tabs.joinToString("\n") { if (it.privacyBlur) "1" else "0" })
       .putInt(KEY_CURRENT_TAB, currentIndex.coerceAtLeast(0))
       .apply()
   }
@@ -154,6 +179,7 @@ class BrowserActivity : AppCompatActivity() {
   private fun clearSavedSession() {
     prefs.edit()
       .remove(KEY_OPEN_TABS)
+      .remove(KEY_PRIVATE_TABS)
       .remove(KEY_CURRENT_TAB)
       .apply()
   }
@@ -167,9 +193,10 @@ class BrowserActivity : AppCompatActivity() {
     }
 
     val savedCurrent = prefs.getInt(KEY_CURRENT_TAB, 0)
+    val savedPrivacy = savedSessionPrivacy()
     restoringSession = true
     try {
-      savedUrls.forEach { newTab(it) }
+      savedUrls.forEachIndexed { index, url -> newTab(url, savedPrivacy.getOrElse(index) { false }) }
       if (tabs.isNotEmpty()) switchTo(savedCurrent.coerceIn(0, tabs.lastIndex))
     } finally {
       restoringSession = false
@@ -181,11 +208,14 @@ class BrowserActivity : AppCompatActivity() {
 
   private fun restoreSessionSilentlyAndOpen(requestedUrl: String) {
     val savedUrls = savedSessionUrls()
+    val savedPrivacy = savedSessionPrivacy()
     val target = normalizeUrl(requestedUrl)
 
     restoringSession = true
     try {
-      savedUrls.filter { it.isNotBlank() }.forEach { newTab(it) }
+      savedUrls.forEachIndexed { index, url ->
+        if (url.isNotBlank()) newTab(url, savedPrivacy.getOrElse(index) { false })
+      }
       val existing = tabs.indexOfFirst { it.url == target }
       if (existing >= 0) {
         switchTo(existing)
@@ -211,6 +241,7 @@ class BrowserActivity : AppCompatActivity() {
     }
 
     val savedCurrent = prefs.getInt(KEY_CURRENT_TAB, 0)
+    val savedPrivacy = savedSessionPrivacy()
     val count = savedUrls.size
     val dialog = AlertDialog.Builder(this)
       .setTitle("Previous browsing session found")
@@ -221,7 +252,7 @@ class BrowserActivity : AppCompatActivity() {
       .setPositiveButton("REOPEN ${count} ${if (count == 1) "TAB" else "TABS"}") { _, _ ->
         restoringSession = true
         try {
-          savedUrls.forEach { newTab(it) }
+          savedUrls.forEachIndexed { index, url -> newTab(url, savedPrivacy.getOrElse(index) { false }) }
           if (tabs.isNotEmpty()) switchTo(savedCurrent.coerceIn(0, tabs.lastIndex))
         } finally {
           restoringSession = false
@@ -284,6 +315,7 @@ class BrowserActivity : AppCompatActivity() {
     top.addView(btn("×", "Close tab") { closeCurrentTab() })
     top.addView(btn("↓", "Download current file or page") { downloadCurrentUrl() })
     top.addView(btn("File", "Open last downloaded file") { openLastDownloadedFile() })
+    top.addView(btn("Priv", "Toggle privacy blur for this tab") { togglePrivacyBlur() })
     top.addView(btn("⛶", "Full screen") { setFullScreenMode(true, true) })
 
     val nav = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
@@ -352,6 +384,18 @@ class BrowserActivity : AppCompatActivity() {
 
     webHolder = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
     root.addView(webHolder, LinearLayout.LayoutParams(-1, 0, 1f))
+
+    privacyOverlay = TextView(this).apply {
+      text = "PRIVATE TAB\nClick/return to Learn With Champak to reveal"
+      textSize = 24f
+      gravity = Gravity.CENTER
+      setTextColor(Color.WHITE)
+      setBackgroundColor(Color.rgb(4, 28, 50))
+      visibility = View.GONE
+      isFocusable = false
+      isClickable = false
+      elevation = dp(40).toFloat()
+    }
 
     pointer = TextView(this).apply {
       text = "●"
@@ -479,9 +523,9 @@ class BrowserActivity : AppCompatActivity() {
     CookieManager.getInstance().setAcceptThirdPartyCookies(web, true)
   }
 
-  private fun newTab(url: String) {
+  private fun newTab(url: String, privacyBlur: Boolean = false) {
     val web = newWebView()
-    val tab = BrowserTab(web, "New Tab", normalizeUrl(url))
+    val tab = BrowserTab(web, "New Tab", normalizeUrl(url), privacyBlur)
     tabs.add(tab)
     switchTo(tabs.lastIndex)
     web.loadUrl(tab.url)
@@ -494,10 +538,12 @@ class BrowserActivity : AppCompatActivity() {
     currentIndex = index
     webHolder.removeAllViews()
     webHolder.addView(tabs[index].webView, FrameLayout.LayoutParams(-1, -1))
-    titleText.text = tabs[index].title
+    webHolder.addView(privacyOverlay, FrameLayout.LayoutParams(-1, -1))
+    titleText.text = if (!windowHasFocus && tabs[index].privacyBlur) "Private Tab" else tabs[index].title
     addressBar.setText(if (tabs[index].url == "about:blank") "" else tabs[index].url, false)
     refreshTabs()
     saveOpenTabs()
+    applyPrivacyState()
     screen.post { ensurePointerVisible() }
   }
 
@@ -514,9 +560,45 @@ class BrowserActivity : AppCompatActivity() {
   private fun refreshTabs() {
     tabStrip.removeAllViews()
     tabs.forEachIndexed { i, tab ->
-      val label = if (i == currentIndex) "● ${i + 1}: ${tab.title.take(18)}" else "${i + 1}: ${tab.title.take(18)}"
+      val shownTitle = if (!windowHasFocus && tab.privacyBlur) "Private Tab" else tab.title
+      val privacyMark = if (tab.privacyBlur) "P " else ""
+      val label = if (i == currentIndex) "● ${privacyMark}${i + 1}: ${shownTitle.take(18)}" else "${privacyMark}${i + 1}: ${shownTitle.take(18)}"
       tabStrip.addView(btn(label, "Tab ${i + 1}") { switchTo(i) }, LinearLayout.LayoutParams(0, -1, 1f))
     }
+  }
+
+  private fun togglePrivacyBlur() {
+    val tab = activeTab() ?: return
+    tab.privacyBlur = !tab.privacyBlur
+    saveOpenTabs()
+    refreshTabs()
+    applyPrivacyState()
+    Toast.makeText(
+      this,
+      if (tab.privacyBlur) "Privacy Blur enabled for this tab" else "Privacy Blur disabled for this tab",
+      Toast.LENGTH_SHORT
+    ).show()
+  }
+
+  private fun applyPrivacyState() {
+    if (!::privacyOverlay.isInitialized) return
+    val tab = activeTab()
+    val hide = !windowHasFocus && tab?.privacyBlur == true
+    val web = tab?.webView
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+      web?.setRenderEffect(
+        if (hide) RenderEffect.createBlurEffect(28f, 28f, Shader.TileMode.CLAMP) else null
+      )
+    } else {
+      web?.alpha = if (hide) 0.08f else 1f
+    }
+
+    privacyOverlay.visibility = if (hide) View.VISIBLE else View.GONE
+    if (::titleText.isInitialized && tab != null) {
+      titleText.text = if (hide) "Private Tab" else tab.title
+    }
+    refreshTabs()
   }
 
   private fun showTabs() {
@@ -1118,6 +1200,7 @@ class BrowserActivity : AppCompatActivity() {
       "Open Outside",
       "Download Current File/Page",
       "Open Last Downloaded File",
+      if (activeTab()?.privacyBlur == true) "Disable Privacy Blur for This Tab" else "Enable Privacy Blur for This Tab",
       "Exit Browser",
       "Cancel"
     )
@@ -1143,7 +1226,8 @@ class BrowserActivity : AppCompatActivity() {
           14 -> openOutside(activeTab()?.url ?: HOME_URL)
           15 -> downloadCurrentUrl()
           16 -> openLastDownloadedFile()
-          17 -> finish()
+          17 -> togglePrivacyBlur()
+          18 -> finish()
         }
       }
       .setOnCancelListener { longPressMenuShown = false }
