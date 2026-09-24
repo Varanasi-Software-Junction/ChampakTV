@@ -40,6 +40,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.browser.customtabs.CustomTabsIntent
 import java.net.URLEncoder
 import kotlin.math.max
 import kotlin.math.min
@@ -370,7 +371,7 @@ class BrowserActivity : AppCompatActivity() {
     tools.addView(btn("First", "Return to first app screen") { returnToFirstScreen() }, LinearLayout.LayoutParams(0, -1, 1f))
     tools.addView(btn("Page", "Focus web page") { focusWebPage() }, LinearLayout.LayoutParams(0, -1, 1f))
     tools.addView(btn("Keys", "Open keyboard") { focusAddressBar() }, LinearLayout.LayoutParams(0, -1, 1f))
-    tools.addView(btn("G", "Google sign-in inside") { openGoogleSignInInside() }, LinearLayout.LayoutParams(0, -1, 1f))
+    tools.addView(btn("G", "Google sign-in securely") { openGoogleSignInSecurely() }, LinearLayout.LayoutParams(0, -1, 1f))
     tools.addView(btn("★", "Add bookmark") { addCurrentBookmark() }, LinearLayout.LayoutParams(0, -1, 1f))
     tools.addView(btn("☆", "Bookmarks") { showBookmarks() }, LinearLayout.LayoutParams(0, -1, 1f))
     tools.addView(btn("◷", "Visited") { showVisitedLinks() }, LinearLayout.LayoutParams(0, -1, 1f))
@@ -485,6 +486,10 @@ class BrowserActivity : AppCompatActivity() {
           val url = request.url.toString()
           if (url.startsWith("mailto:") || url.startsWith("tel:") || url.startsWith("whatsapp:")) {
             openOutside(url)
+            return true
+          }
+          if (isGoogleAuthenticationUrl(url)) {
+            openGoogleSignInSecurely(url)
             return true
           }
           return false
@@ -641,19 +646,33 @@ class BrowserActivity : AppCompatActivity() {
   private fun activeWebView(): WebView? = activeTab()?.webView
   private fun activeTabFor(view: WebView): BrowserTab? = tabs.firstOrNull { it.webView == view }
 
-  private fun openGoogleSignInInside() {
+  private fun isGoogleAuthenticationUrl(url: String): Boolean {
+    val host = try { Uri.parse(url).host?.lowercase().orEmpty() } catch (_: Exception) { "" }
+    return host == "accounts.google.com" ||
+      host == "oauth2.googleapis.com" ||
+      host == "accounts.youtube.com"
+  }
+
+  private fun openGoogleSignInSecurely(url: String = GOOGLE_SIGN_IN_URL) {
     setFullScreenMode(false, false)
-    AlertDialog.Builder(this)
-      .setTitle("Google Sign-In")
-      .setMessage("I will open Google sign-in inside this browser with desktop mode, cookies and pop-ups enabled. If Google still blocks embedded sign-in, use Outside Browser from the next dialog.")
-      .setPositiveButton("Open Inside") { _, _ -> loadInCurrent(GOOGLE_SIGN_IN_URL); focusWebPage() }
-      .setNeutralButton("Google Home") { _, _ -> loadInCurrent(GOOGLE_HOME_URL); focusWebPage() }
-      .setNegativeButton("Outside Browser") { _, _ -> openOutside(GOOGLE_SIGN_IN_URL) }
-      .show()
+    val safeUrl = if (isGoogleAuthenticationUrl(url)) url else GOOGLE_SIGN_IN_URL
+    try {
+      val customTabsIntent = CustomTabsIntent.Builder()
+        .setShowTitle(true)
+        .build()
+      customTabsIntent.launchUrl(this, Uri.parse(safeUrl))
+      Toast.makeText(
+        this,
+        "Google sign-in opened securely. Close the browser tab to return to Learn With Champak.",
+        Toast.LENGTH_LONG
+      ).show()
+    } catch (_: Exception) {
+      openOutside(safeUrl)
+    }
   }
 
   private fun openGoogleSignInOutside() {
-    openOutside(GOOGLE_SIGN_IN_URL)
+    openGoogleSignInSecurely()
   }
 
   private fun openOutside(url: String) {
@@ -954,8 +973,8 @@ class BrowserActivity : AppCompatActivity() {
       .setMessage(
         "Visited links are saved automatically.\n\n" +
           "Move the yellow pointer to the address bar and press OK. Start typing part of a visited link, then choose the matching saved link.\n\n" +
-          "Type google sign in, accounts.google.com or press G to open Google sign-in.\n\n" +
-          "If Google says this browser is not secure, press Menu and choose Google Sign-In Outside."
+          "Type google sign in, accounts.google.com or press G to open Google sign-in securely.\n\n" +
+          "Google authentication opens in an Android secure browser tab rather than the embedded WebView. Close that tab to return here."
       )
       .setPositiveButton("Open Address Bar") { _, _ -> focusAddressBar() }
       .setNegativeButton("Close", null)
@@ -1188,8 +1207,8 @@ class BrowserActivity : AppCompatActivity() {
       if (fullScreen) "Show Controls" else "Full Screen Web Page",
       "Focus Web Page / Pointer",
       "Open Keyboard / Address Bar",
-      "Google Sign-In Inside",
-      "Google Sign-In Outside",
+      "Google Sign-In (Secure)",
+      "Google Sign-In (System Browser)",
       "Address Bar Hints",
       "Add Bookmark",
       "Bookmarks",
@@ -1214,7 +1233,7 @@ class BrowserActivity : AppCompatActivity() {
           2 -> setFullScreenMode(!fullScreen, true)
           3 -> focusWebPage()
           4 -> focusAddressBar()
-          5 -> openGoogleSignInInside()
+          5 -> openGoogleSignInSecurely()
           6 -> openGoogleSignInOutside()
           7 -> showAddressHints()
           8 -> addCurrentBookmark()
