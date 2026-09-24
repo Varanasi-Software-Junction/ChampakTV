@@ -326,7 +326,7 @@ class BrowserActivity : AppCompatActivity() {
       orientation = LinearLayout.HORIZONTAL
       gravity = Gravity.CENTER_VERTICAL
     }
-    brandActionsScroll.addView(brandActions, HorizontalScrollView.LayoutParams(-2, -1))
+    brandActionsScroll.addView(brandActions, ViewGroup.LayoutParams(-2, -1))
     brandRow.addView(brandActionsScroll, LinearLayout.LayoutParams(dp(310), -1))
     brandActions.addView(btn("First", "Return to first screen") { returnToFirstScreen() }, fixedButtonLp(72))
     brandActions.addView(btn("+ Tab", "New tab") { newTab(HOME_URL) }, fixedButtonLp(72))
@@ -384,7 +384,7 @@ class BrowserActivity : AppCompatActivity() {
     addressRow.addView(addressBar, LinearLayout.LayoutParams(0, dp(56), 1f).apply {
       marginEnd = dp(8)
     })
-    addressRow.addView(btn("GO", "Open address") { openAddressBarValue() }, fixedButtonLp(76, 56)))
+    addressRow.addView(btn("GO", "Open address") { openAddressBarValue() }, fixedButtonLp(76, 56))
 
     val navScroll = HorizontalScrollView(this).apply {
       isHorizontalScrollBarEnabled = true
@@ -395,7 +395,7 @@ class BrowserActivity : AppCompatActivity() {
       orientation = LinearLayout.HORIZONTAL
       gravity = Gravity.CENTER_VERTICAL
     }
-    navScroll.addView(nav, HorizontalScrollView.LayoutParams(-2, dp(46)))
+    navScroll.addView(nav, ViewGroup.LayoutParams(-2, dp(46)))
     header.addView(navScroll, LinearLayout.LayoutParams(-1, dp(48)))
 
     nav.addView(btn("← Back", "Back") { goBackOrClose() }, fixedButtonLp(86))
@@ -426,7 +426,7 @@ class BrowserActivity : AppCompatActivity() {
       gravity = Gravity.CENTER_VERTICAL
       setPadding(dp(4), dp(2), dp(4), dp(2))
     }
-    tabScroll.addView(tabStrip, HorizontalScrollView.LayoutParams(-2, dp(40)))
+    tabScroll.addView(tabStrip, ViewGroup.LayoutParams(-2, dp(40)))
     header.addView(tabScroll, LinearLayout.LayoutParams(-1, dp(42)))
 
     webHolder = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
