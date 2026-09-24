@@ -36,6 +36,7 @@ import android.widget.AutoCompleteTextView
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -282,59 +283,76 @@ class BrowserActivity : AppCompatActivity() {
 
   private fun buildUi() {
     screen = FrameLayout(this).apply {
-      setBackgroundColor(Color.rgb(3, 15, 34))
+      setBackgroundColor(Color.rgb(2, 15, 30))
       isFocusable = true
       isFocusableInTouchMode = true
     }
 
     root = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
-      setBackgroundColor(Color.rgb(3, 15, 34))
+      setBackgroundColor(Color.rgb(2, 15, 30))
     }
     screen.addView(root, FrameLayout.LayoutParams(-1, -1))
 
     header = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
-      setPadding(dp(8), dp(6), dp(8), dp(6))
-      setBackgroundColor(Color.rgb(5, 62, 112))
+      setPadding(dp(10), dp(8), dp(10), dp(8))
+      setBackgroundColor(Color.rgb(4, 45, 82))
     }
     root.addView(header, LinearLayout.LayoutParams(-1, -2))
 
-    val top = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-    header.addView(top, LinearLayout.LayoutParams(-1, dp(42)))
+    val brandRow = LinearLayout(this).apply {
+      orientation = LinearLayout.HORIZONTAL
+      gravity = Gravity.CENTER_VERTICAL
+      setPadding(dp(4), 0, dp(4), 0)
+    }
+    header.addView(brandRow, LinearLayout.LayoutParams(-1, dp(44)))
+
     titleText = TextView(this).apply {
       text = "Learn With Champak Browser"
       setTextColor(Color.WHITE)
-      textSize = 15f
+      textSize = 17f
       maxLines = 1
       gravity = Gravity.CENTER_VERTICAL
+      setPadding(dp(8), 0, dp(8), 0)
     }
-    top.addView(titleText, LinearLayout.LayoutParams(0, -1, 1f))
-    top.addView(btn("▦", "Return to first screen") { returnToFirstScreen() })
-    top.addView(btn("＋", "New tab") { newTab(HOME_URL) })
-    top.addView(btn("▤", "Tabs") { showTabs() })
-    top.addView(btn("×", "Close tab") { closeCurrentTab() })
-    top.addView(btn("↓", "Download current file or page") { downloadCurrentUrl() })
-    top.addView(btn("File", "Open last downloaded file") { openLastDownloadedFile() })
-    top.addView(btn("Priv", "Toggle privacy blur for this tab") { togglePrivacyBlur() })
-    top.addView(btn("⛶", "Full screen") { setFullScreenMode(true, true) })
+    brandRow.addView(titleText, LinearLayout.LayoutParams(0, -1, 1f))
 
-    val nav = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-    header.addView(nav, LinearLayout.LayoutParams(-1, dp(44)))
-    nav.addView(btn("←", "Back") { goBackOrClose() })
-    nav.addView(btn("→", "Forward") { activeWebView()?.let { if (it.canGoForward()) it.goForward() } })
-    nav.addView(btn("↻", "Reload") { activeWebView()?.reload() })
-    nav.addView(btn("⌂", "Home") { loadInCurrent(HOME_URL) })
+    val brandActionsScroll = HorizontalScrollView(this).apply {
+      isHorizontalScrollBarEnabled = false
+      overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+    }
+    val brandActions = LinearLayout(this).apply {
+      orientation = LinearLayout.HORIZONTAL
+      gravity = Gravity.CENTER_VERTICAL
+    }
+    brandActionsScroll.addView(brandActions, HorizontalScrollView.LayoutParams(-2, -1))
+    brandRow.addView(brandActionsScroll, LinearLayout.LayoutParams(dp(310), -1))
+    brandActions.addView(btn("First", "Return to first screen") { returnToFirstScreen() }, fixedButtonLp(72))
+    brandActions.addView(btn("+ Tab", "New tab") { newTab(HOME_URL) }, fixedButtonLp(72))
+    brandActions.addView(btn("Tabs", "Show tabs") { showTabs() }, fixedButtonLp(68))
+    brandActions.addView(btn("Close", "Close tab") { closeCurrentTab() }, fixedButtonLp(72))
+    brandActions.addView(btn("Full", "Full screen") { setFullScreenMode(true, true) }, fixedButtonLp(68))
+
+    val addressRow = LinearLayout(this).apply {
+      orientation = LinearLayout.HORIZONTAL
+      gravity = Gravity.CENTER_VERTICAL
+      setPadding(0, dp(7), 0, dp(7))
+    }
+    header.addView(addressRow, LinearLayout.LayoutParams(-1, dp(70)))
 
     addressBar = AutoCompleteTextView(this).apply {
-      hint = "Type website/search/saved link • G opens Google sign-in"
+      hint = "Search Google or type a website address"
       threshold = 1
       setSingleLine(true)
-      textSize = 14f
+      textSize = 18f
       setTextColor(Color.rgb(3, 44, 84))
-      setHintTextColor(Color.rgb(90, 115, 140))
+      setHintTextColor(Color.rgb(100, 120, 138))
       setBackgroundColor(Color.WHITE)
+      setPadding(dp(18), 0, dp(18), 0)
+      minHeight = dp(54)
       imeOptions = EditorInfo.IME_ACTION_GO
+      setSelectAllOnFocus(false)
       setOnFocusChangeListener { _, hasFocus ->
         pointer.visibility = View.VISIBLE
         if (hasFocus) {
@@ -363,25 +381,53 @@ class BrowserActivity : AppCompatActivity() {
         } else false
       }
     }
-    nav.addView(addressBar, LinearLayout.LayoutParams(0, dp(38), 1f))
-    nav.addView(btn("▶", "Go") { openAddressBarValue() })
+    addressRow.addView(addressBar, LinearLayout.LayoutParams(0, dp(56), 1f).apply {
+      marginEnd = dp(8)
+    })
+    addressRow.addView(btn("GO", "Open address") { openAddressBarValue() }, fixedButtonLp(76, 56)))
 
-    val tools = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-    header.addView(tools, LinearLayout.LayoutParams(-1, dp(38)))
-    tools.addView(btn("First", "Return to first app screen") { returnToFirstScreen() }, LinearLayout.LayoutParams(0, -1, 1f))
-    tools.addView(btn("Page", "Focus web page") { focusWebPage() }, LinearLayout.LayoutParams(0, -1, 1f))
-    tools.addView(btn("Keys", "Open keyboard") { focusAddressBar() }, LinearLayout.LayoutParams(0, -1, 1f))
-    tools.addView(btn("G", "Google sign-in securely") { openGoogleSignInSecurely() }, LinearLayout.LayoutParams(0, -1, 1f))
-    tools.addView(btn("★", "Add bookmark") { addCurrentBookmark() }, LinearLayout.LayoutParams(0, -1, 1f))
-    tools.addView(btn("☆", "Bookmarks") { showBookmarks() }, LinearLayout.LayoutParams(0, -1, 1f))
-    tools.addView(btn("◷", "Visited") { showVisitedLinks() }, LinearLayout.LayoutParams(0, -1, 1f))
-    tools.addView(btn("?", "Address bar hints") { showAddressHints() }, LinearLayout.LayoutParams(0, -1, 1f))
-    tools.addView(btn("Time", "Timed site open") { showTimedSiteMenu() }, LinearLayout.LayoutParams(0, -1, 1f))
-    tools.addView(btn("Out", "Open outside") { openOutside(activeTab()?.url ?: HOME_URL) }, LinearLayout.LayoutParams(0, -1, 1f))
-    tools.addView(btn("Upd", "Update app") { openOutside(APK_URL) }, LinearLayout.LayoutParams(0, -1, 1f))
+    val navScroll = HorizontalScrollView(this).apply {
+      isHorizontalScrollBarEnabled = true
+      isFillViewport = true
+      overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+    }
+    val nav = LinearLayout(this).apply {
+      orientation = LinearLayout.HORIZONTAL
+      gravity = Gravity.CENTER_VERTICAL
+    }
+    navScroll.addView(nav, HorizontalScrollView.LayoutParams(-2, dp(46)))
+    header.addView(navScroll, LinearLayout.LayoutParams(-1, dp(48)))
 
-    tabStrip = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setBackgroundColor(Color.rgb(2, 35, 70)) }
-    header.addView(tabStrip, LinearLayout.LayoutParams(-1, dp(34)))
+    nav.addView(btn("← Back", "Back") { goBackOrClose() }, fixedButtonLp(86))
+    nav.addView(btn("Forward →", "Forward") { activeWebView()?.let { if (it.canGoForward()) it.goForward() } }, fixedButtonLp(104))
+    nav.addView(btn("Reload", "Reload") { activeWebView()?.reload() }, fixedButtonLp(86))
+    nav.addView(btn("Home", "Home") { loadInCurrent(HOME_URL) }, fixedButtonLp(80))
+    nav.addView(btn("Keyboard", "Open keyboard") { focusAddressBar() }, fixedButtonLp(98))
+    nav.addView(btn("Google", "Google sign-in securely") { openGoogleSignInSecurely() }, fixedButtonLp(92))
+    nav.addView(btn("★ Save", "Add bookmark") { addCurrentBookmark() }, fixedButtonLp(88))
+    nav.addView(btn("Bookmarks", "Bookmarks") { showBookmarks() }, fixedButtonLp(104))
+    nav.addView(btn("Visited", "Visited links") { showVisitedLinks() }, fixedButtonLp(88))
+    nav.addView(btn("Download", "Download current file or page") { downloadCurrentUrl() }, fixedButtonLp(102))
+    nav.addView(btn("Open File", "Open last downloaded file") { openLastDownloadedFile() }, fixedButtonLp(98))
+    nav.addView(btn("Privacy", "Toggle privacy blur for this tab") { togglePrivacyBlur() }, fixedButtonLp(90))
+    nav.addView(btn("Timed", "Timed site open") { showTimedSiteMenu() }, fixedButtonLp(82))
+    nav.addView(btn("Outside", "Open outside") { openOutside(activeTab()?.url ?: HOME_URL) }, fixedButtonLp(92))
+    nav.addView(btn("Update", "Update app") { openOutside(APK_URL) }, fixedButtonLp(88))
+    nav.addView(btn("Help", "Address bar hints") { showAddressHints() }, fixedButtonLp(76))
+
+    val tabScroll = HorizontalScrollView(this).apply {
+      isHorizontalScrollBarEnabled = true
+      isFillViewport = true
+      setBackgroundColor(Color.rgb(2, 30, 58))
+      overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+    }
+    tabStrip = LinearLayout(this).apply {
+      orientation = LinearLayout.HORIZONTAL
+      gravity = Gravity.CENTER_VERTICAL
+      setPadding(dp(4), dp(2), dp(4), dp(2))
+    }
+    tabScroll.addView(tabStrip, HorizontalScrollView.LayoutParams(-2, dp(40)))
+    header.addView(tabScroll, LinearLayout.LayoutParams(-1, dp(42)))
 
     webHolder = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
     root.addView(webHolder, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -426,18 +472,32 @@ class BrowserActivity : AppCompatActivity() {
     screen.post { centerPointerInWebPage() }
   }
 
+  private fun fixedButtonLp(widthDp: Int, heightDp: Int = 44): LinearLayout.LayoutParams =
+    LinearLayout.LayoutParams(dp(widthDp), dp(heightDp)).apply {
+      marginEnd = dp(5)
+    }
+
   private fun btn(text: String, desc: String, action: () -> Unit): Button =
-    btn(text, desc, action, LinearLayout.LayoutParams(dp(48), -1))
+    btn(text, desc, action, fixedButtonLp(72))
 
   private fun btn(text: String, desc: String, action: () -> Unit, lp: LinearLayout.LayoutParams): Button {
     return Button(this).apply {
       this.text = text
       contentDescription = desc
-      textSize = 12f
+      textSize = 12.5f
       isAllCaps = false
       setTextColor(Color.WHITE)
-      setBackgroundColor(Color.rgb(7, 91, 156))
+      setBackgroundColor(Color.rgb(8, 92, 156))
+      setPadding(dp(8), 0, dp(8), 0)
+      minWidth = dp(64)
+      minHeight = dp(40)
       setOnClickListener { action() }
+      setOnFocusChangeListener { v, hasFocus ->
+        v.alpha = if (hasFocus) 1f else 0.92f
+        v.scaleX = if (hasFocus) 1.06f else 1f
+        v.scaleY = if (hasFocus) 1.06f else 1f
+        v.elevation = if (hasFocus) dp(10).toFloat() else dp(2).toFloat()
+      }
       layoutParams = lp
       isFocusable = true
     }
@@ -512,7 +572,7 @@ class BrowserActivity : AppCompatActivity() {
     web.settings.domStorageEnabled = true
     web.settings.databaseEnabled = true
     web.settings.loadsImagesAutomatically = true
-    web.settings.loadWithOverviewMode = true
+    web.settings.loadWithOverviewMode = false
     web.settings.useWideViewPort = true
     web.settings.builtInZoomControls = true
     web.settings.displayZoomControls = false
@@ -524,6 +584,10 @@ class BrowserActivity : AppCompatActivity() {
     web.settings.allowContentAccess = true
     web.settings.allowFileAccess = true
     web.settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+    web.isHorizontalScrollBarEnabled = true
+    web.isVerticalScrollBarEnabled = true
+    web.scrollBarStyle = View.SCROLLBARS_INSIDE_OVERLAY
+    web.overScrollMode = View.OVER_SCROLL_ALWAYS
     CookieManager.getInstance().setAcceptCookie(true)
     CookieManager.getInstance().setAcceptThirdPartyCookies(web, true)
   }
@@ -1098,8 +1162,36 @@ class BrowserActivity : AppCompatActivity() {
     when {
       dy > 0 && webPoint.second >= webHolder.height - edge -> performPageScroll(scroll)
       dy < 0 && webPoint.second <= edge -> performPageScroll(-scroll)
-      dx > 0 && webPoint.first >= webHolder.width - edge -> activeWebView()?.scrollBy(dp(180), 0)
-      dx < 0 && webPoint.first <= edge -> activeWebView()?.scrollBy(-dp(180), 0)
+      dx > 0 && webPoint.first >= webHolder.width - edge -> performHorizontalPageScroll(dp(220))
+      dx < 0 && webPoint.first <= edge -> performHorizontalPageScroll(-dp(220))
+    }
+  }
+
+  private fun performHorizontalPageScroll(amount: Int) {
+    activeWebView()?.let { web ->
+      web.scrollBy(amount, 0)
+      val js = """
+        (function(){
+          var amount = $amount;
+          var el = document.scrollingElement || document.documentElement || document.body;
+          if (el && el.scrollWidth > el.clientWidth) {
+            el.scrollBy({left: amount, top: 0, behavior: 'smooth'});
+          }
+          var midX = amount > 0 ? window.innerWidth - 12 : 12;
+          var midY = Math.floor(window.innerHeight / 2);
+          var hit = document.elementFromPoint(midX, midY);
+          while (hit && hit !== document.body && hit !== document.documentElement) {
+            var style = window.getComputedStyle(hit);
+            var canScroll = /(auto|scroll)/.test(style.overflowX) && hit.scrollWidth > hit.clientWidth;
+            if (canScroll) {
+              hit.scrollBy({left: amount, top: 0, behavior: 'smooth'});
+              break;
+            }
+            hit = hit.parentElement;
+          }
+        })();
+      """.trimIndent()
+      web.evaluateJavascript(js, null)
     }
   }
 
