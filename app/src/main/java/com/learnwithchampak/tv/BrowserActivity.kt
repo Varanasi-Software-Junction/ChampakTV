@@ -61,9 +61,10 @@ class BrowserActivity : AppCompatActivity() {
     private const val INSIDE_KASHI_URL = "https://insidekashi.com"
     private const val YOUTUBE_URL = "https://youtube.com/@champaksworld"
     private const val WHATSAPP_URL = "https://web.whatsapp.com"
-    private const val GOOGLE_SIGN_IN_URL = "https://accounts.google.com/signin"
-    private const val GOOGLE_ACCOUNT_URL = "https://myaccount.google.com"
-    private const val GMAIL_URL = "https://mail.google.com"
+    private const val GOOGLE_ACCOUNT_URL = "https://myaccount.google.com/"
+    private const val GMAIL_URL = "https://mail.google.com/mail/u/0/"
+    private const val GOOGLE_SIGN_IN_URL = "https://accounts.google.com/AccountChooser?continue=https%3A%2F%2Fmyaccount.google.com%2F&hl=en"
+    private const val GOOGLE_GMAIL_SIGN_IN_URL = "https://accounts.google.com/AccountChooser?continue=https%3A%2F%2Fmail.google.com%2Fmail%2Fu%2F0%2F&hl=en"
     private const val GOOGLE_HOME_URL = "https://www.google.com"
     private const val GITHUB_CODE_URL = "https://github.com/Programmer-s-Picnic/json-images/tree/main/windows_app"
     private const val PRIVACY_URL = "https://programmer-s-picnic.github.io/json-images/tv/privacy-policy.html"
@@ -509,8 +510,8 @@ class BrowserActivity : AppCompatActivity() {
     add("YouTube", "YouTube", 86) { newTab(YOUTUBE_URL) }
     add("WhatsApp", "WhatsApp Web", 92) { newTab(WHATSAPP_URL) }
     add("Google", "Google Search", 82) { newTab(GOOGLE_HOME_URL) }
-    add("G Account", "Google Account secure sign-in", 98) { openSecureCustomTab(GOOGLE_ACCOUNT_URL, "Google Account") }
-    add("Gmail", "Gmail secure sign-in", 76) { openSecureCustomTab(GMAIL_URL, "Gmail") }
+    add("G Account", "Google Account secure sign-in", 98) { openSecureCustomTab(GOOGLE_SIGN_IN_URL, "Google Account") }
+    add("Gmail", "Gmail secure sign-in", 76) { openSecureCustomTab(GOOGLE_GMAIL_SIGN_IN_URL, "Gmail") }
     add("Keyboard", "Open keyboard", 94) { focusAddressBar() }
     add("★ Save", "Add bookmark", 84) { addCurrentBookmark() }
     add("Bookmarks", "Bookmarks", 100) { showBookmarks() }
@@ -1172,7 +1173,9 @@ class BrowserActivity : AppCompatActivity() {
     val host = try { Uri.parse(url).host?.lowercase().orEmpty() } catch (_: Exception) { "" }
     return host == "accounts.google.com" ||
       host == "oauth2.googleapis.com" ||
-      host == "accounts.youtube.com"
+      host == "accounts.youtube.com" ||
+      host.endsWith(".googleusercontent.com") ||
+      host == "myaccount.google.com"
   }
 
   private fun openSecureCustomTab(url: String, label: String) {
@@ -1193,12 +1196,15 @@ class BrowserActivity : AppCompatActivity() {
   }
 
   private fun openGoogleSignInSecurely(url: String = GOOGLE_SIGN_IN_URL) {
+    // Preserve a website's full OAuth URL including client_id, redirect_uri,
+    // scope, state and PKCE parameters. Only use our account chooser when
+    // the toolbar explicitly starts a generic Google sign-in.
     val safeUrl = if (isGoogleAuthenticationUrl(url)) url else GOOGLE_SIGN_IN_URL
     openSecureCustomTab(safeUrl, "Google sign-in")
   }
 
   private fun openGoogleSignInOutside() {
-    openSecureCustomTab(GOOGLE_SIGN_IN_URL, "Google sign-in")
+    openSecureCustomTab(GOOGLE_SIGN_IN_URL, "Google Account")
   }
 
   private fun showDeveloperMenuAndroid() {
