@@ -58,8 +58,14 @@ class BrowserActivity : AppCompatActivity() {
     const val EXTRA_START_FRESH = "com.learnwithchampak.tv.EXTRA_START_FRESH"
     const val EXTRA_REOPEN_ALL_TABS = "com.learnwithchampak.tv.EXTRA_REOPEN_ALL_TABS"
     private const val HOME_URL = "https://www.learnwithchampak.live"
-    private const val GOOGLE_SIGN_IN_URL = "https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Fwww.google.com%2F&hl=en"
+    private const val INSIDE_KASHI_URL = "https://insidekashi.com"
+    private const val YOUTUBE_URL = "https://youtube.com/@champaksworld"
+    private const val WHATSAPP_URL = "https://web.whatsapp.com"
+    private const val GOOGLE_SIGN_IN_URL = "https://accounts.google.com/signin"
+    private const val GOOGLE_ACCOUNT_URL = "https://myaccount.google.com"
+    private const val GMAIL_URL = "https://mail.google.com"
     private const val GOOGLE_HOME_URL = "https://www.google.com"
+    private const val GITHUB_CODE_URL = "https://github.com/Programmer-s-Picnic/json-images/tree/main/windows_app"
     private const val PRIVACY_URL = "https://programmer-s-picnic.github.io/json-images/tv/privacy-policy.html"
     private const val PREFS = "champak_tabs_prefs"
     private const val KEY_DEFAULT_ASKED = "default_asked_browser"
@@ -95,6 +101,7 @@ class BrowserActivity : AppCompatActivity() {
   private lateinit var addressBar: AutoCompleteTextView
   private lateinit var titleText: TextView
   private lateinit var rotationButton: Button
+  private lateinit var navBar: LinearLayout
   private lateinit var prefs: SharedPreferences
 
   private val tabs = mutableListOf<BrowserTab>()
@@ -322,22 +329,24 @@ class BrowserActivity : AppCompatActivity() {
     }
     root.addView(header, LinearLayout.LayoutParams(-1, -2))
 
+    val compactUi = resources.configuration.screenWidthDp < 700
+
     val brandRow = LinearLayout(this).apply {
       orientation = LinearLayout.HORIZONTAL
       gravity = Gravity.CENTER_VERTICAL
       setPadding(dp(4), 0, dp(4), 0)
     }
-    header.addView(brandRow, LinearLayout.LayoutParams(-1, dp(44)))
+    header.addView(brandRow, LinearLayout.LayoutParams(-1, dp(if (compactUi) 34 else 42)))
 
     titleText = TextView(this).apply {
       text = "Learn With Champak Browser"
       setTextColor(Color.WHITE)
-      textSize = 17f
+      textSize = if (compactUi) 15f else 18f
       maxLines = 1
       gravity = Gravity.CENTER_VERTICAL
       setPadding(dp(8), 0, dp(8), 0)
     }
-    brandRow.addView(titleText, LinearLayout.LayoutParams(0, -1, 1f))
+    brandRow.addView(titleText, LinearLayout.LayoutParams(-1, -1))
 
     val brandActionsScroll = HorizontalScrollView(this).apply {
       isHorizontalScrollBarEnabled = false
@@ -346,35 +355,37 @@ class BrowserActivity : AppCompatActivity() {
     val brandActions = LinearLayout(this).apply {
       orientation = LinearLayout.HORIZONTAL
       gravity = Gravity.CENTER_VERTICAL
+      setPadding(dp(2), 0, dp(2), 0)
     }
     brandActionsScroll.addView(brandActions, ViewGroup.LayoutParams(-2, -1))
-    brandRow.addView(brandActionsScroll, LinearLayout.LayoutParams(dp(310), -1))
-    brandActions.addView(btn("First", "Return to first screen") { returnToFirstScreen() }, fixedButtonLp(72))
-    brandActions.addView(btn("+ Tab", "New tab") { newTab(HOME_URL) }, fixedButtonLp(72))
-    brandActions.addView(btn("Tabs", "Show tabs") { showTabs() }, fixedButtonLp(68))
-    brandActions.addView(btn("Close", "Close tab") { closeCurrentTab() }, fixedButtonLp(72))
+    header.addView(brandActionsScroll, LinearLayout.LayoutParams(-1, dp(if (compactUi) 42 else 46)))
+
+    brandActions.addView(btn("+ Tab", "New tab") { newTab(HOME_URL) }, fixedButtonLp(72, if (compactUi) 38 else 42))
+    brandActions.addView(btn("Blank", "New blank tab") { newTab("about:blank") }, fixedButtonLp(72, if (compactUi) 38 else 42))
+    brandActions.addView(btn("Tabs", "Show tabs") { showTabs() }, fixedButtonLp(68, if (compactUi) 38 else 42))
+    brandActions.addView(btn("Close", "Close tab") { closeCurrentTab() }, fixedButtonLp(72, if (compactUi) 38 else 42))
     rotationButton = btn("Rotate", "Rotate tabs") { showTabRotationDialog() }.also {
-      brandActions.addView(it, fixedButtonLp(82))
+      brandActions.addView(it, fixedButtonLp(82, if (compactUi) 38 else 42))
     }
-    brandActions.addView(btn("Full", "Full screen") { setFullScreenMode(true, true) }, fixedButtonLp(68))
+    brandActions.addView(btn("Full", "Full screen") { setFullScreenMode(true, true) }, fixedButtonLp(68, if (compactUi) 38 else 42))
 
     val addressRow = LinearLayout(this).apply {
       orientation = LinearLayout.HORIZONTAL
       gravity = Gravity.CENTER_VERTICAL
       setPadding(0, dp(7), 0, dp(7))
     }
-    header.addView(addressRow, LinearLayout.LayoutParams(-1, dp(70)))
+    header.addView(addressRow, LinearLayout.LayoutParams(-1, dp(if (compactUi) 60 else 68)))
 
     addressBar = AutoCompleteTextView(this).apply {
       hint = "Search Google or type a website address"
       threshold = 1
       setSingleLine(true)
-      textSize = 18f
+      textSize = if (compactUi) 16f else 18f
       setTextColor(Color.rgb(3, 44, 84))
       setHintTextColor(Color.rgb(100, 120, 138))
       setBackgroundColor(Color.WHITE)
       setPadding(dp(18), 0, dp(18), 0)
-      minHeight = dp(54)
+      minHeight = dp(if (compactUi) 48 else 54)
       imeOptions = EditorInfo.IME_ACTION_GO
       setSelectAllOnFocus(false)
       setOnFocusChangeListener { _, hasFocus ->
@@ -405,44 +416,23 @@ class BrowserActivity : AppCompatActivity() {
         } else false
       }
     }
-    addressRow.addView(addressBar, LinearLayout.LayoutParams(0, dp(56), 1f).apply {
+    addressRow.addView(addressBar, LinearLayout.LayoutParams(0, dp(if (compactUi) 48 else 54), 1f).apply {
       marginEnd = dp(8)
     })
-    addressRow.addView(btn("GO", "Open address") { openAddressBarValue() }, fixedButtonLp(76, 56))
+    addressRow.addView(btn("GO", "Open address") { openAddressBarValue() }, fixedButtonLp(70, if (compactUi) 48 else 54))
 
     val navScroll = HorizontalScrollView(this).apply {
       isHorizontalScrollBarEnabled = true
       isFillViewport = true
       overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
     }
-    val nav = LinearLayout(this).apply {
+    navBar = LinearLayout(this).apply {
       orientation = LinearLayout.HORIZONTAL
       gravity = Gravity.CENTER_VERTICAL
     }
-    navScroll.addView(nav, ViewGroup.LayoutParams(-2, dp(46)))
-    header.addView(navScroll, LinearLayout.LayoutParams(-1, dp(48)))
-
-    nav.addView(btn("← Back", "Back") { goBackOrClose() }, fixedButtonLp(86))
-    nav.addView(btn("Forward →", "Forward") { activeWebView()?.let { if (it.canGoForward()) it.goForward() } }, fixedButtonLp(104))
-    nav.addView(btn("Reload", "Reload") { activeWebView()?.reload() }, fixedButtonLp(86))
-    nav.addView(btn("Find", "Find on page") { showFindOnPageDialog() }, fixedButtonLp(76))
-    nav.addView(btn("Home", "Home") { loadInCurrent(HOME_URL) }, fixedButtonLp(80))
-    nav.addView(btn("Keyboard", "Open keyboard") { focusAddressBar() }, fixedButtonLp(98))
-    nav.addView(btn("Google", "Google sign-in securely") { openGoogleSignInSecurely() }, fixedButtonLp(92))
-    nav.addView(btn("★ Save", "Add bookmark") { addCurrentBookmark() }, fixedButtonLp(88))
-    nav.addView(btn("Bookmarks", "Bookmarks") { showBookmarks() }, fixedButtonLp(104))
-    nav.addView(btn("Visited", "Visited links") { showVisitedLinks() }, fixedButtonLp(88))
-    nav.addView(btn("Download", "Download current file or page") { downloadCurrentUrl() }, fixedButtonLp(102))
-    nav.addView(btn("Open File", "Open last downloaded file") { openLastDownloadedFile() }, fixedButtonLp(98))
-    nav.addView(btn("Privacy", "Toggle privacy blur for this tab") { togglePrivacyBlur() }, fixedButtonLp(90))
-    nav.addView(btn("Timed", "Timed site open") { showTimedSiteMenu() }, fixedButtonLp(82))
-    nav.addView(btn("Links", "Quick links") { showQuickLinksMenu() }, fixedButtonLp(76))
-    nav.addView(btn("Share", "Share current page") { shareCurrentPage() }, fixedButtonLp(78))
-    nav.addView(btn("Copy", "Copy current link") { copyCurrentLink() }, fixedButtonLp(76))
-    nav.addView(btn("Desktop", "Toggle desktop site") { toggleDesktopMode() }, fixedButtonLp(92))
-    nav.addView(btn("Outside", "Open outside") { openOutside(activeTab()?.url ?: HOME_URL) }, fixedButtonLp(92))
-    nav.addView(btn("Settings", "Browser settings") { showBrowserSettings() }, fixedButtonLp(92))
-    nav.addView(btn("Help", "Address bar hints") { showAddressHints() }, fixedButtonLp(76))
+    navScroll.addView(navBar, ViewGroup.LayoutParams(-2, dp(if (compactUi) 40 else 44)))
+    header.addView(navScroll, LinearLayout.LayoutParams(-1, dp(if (compactUi) 42 else 46)))
+    populateToolbar(compactUi)
 
     val tabScroll = HorizontalScrollView(this).apply {
       isHorizontalScrollBarEnabled = true
@@ -499,6 +489,53 @@ class BrowserActivity : AppCompatActivity() {
     setContentView(screen)
     refreshAddressSuggestions()
     screen.post { centerPointerInWebPage() }
+  }
+
+  private fun populateToolbar(compactUi: Boolean = resources.configuration.screenWidthDp < 700) {
+    if (!::navBar.isInitialized) return
+    navBar.removeAllViews()
+    val h = if (compactUi) 38 else 42
+    fun add(label: String, desc: String, width: Int, action: () -> Unit) {
+      navBar.addView(btn(label, desc, action), fixedButtonLp(width, h))
+    }
+
+    add("← Back", "Back", 82) { goBackOrClose() }
+    add("Forward →", "Forward", 102) { activeWebView()?.let { if (it.canGoForward()) it.goForward() } }
+    add("Reload", "Reload", 82) { activeWebView()?.reload() }
+    add("Find", "Find on page", 72) { showFindOnPageDialog() }
+    add("Home", "Home", 76) { loadInCurrent(HOME_URL) }
+    add("Learn", "Learn With Champak", 78) { newTab(HOME_URL) }
+    add("Kashi", "Inside Kashi", 76) { newTab(INSIDE_KASHI_URL) }
+    add("YouTube", "YouTube", 86) { newTab(YOUTUBE_URL) }
+    add("WhatsApp", "WhatsApp Web", 92) { newTab(WHATSAPP_URL) }
+    add("Google", "Google Search", 82) { newTab(GOOGLE_HOME_URL) }
+    add("G Account", "Google Account secure sign-in", 98) { openSecureCustomTab(GOOGLE_ACCOUNT_URL, "Google Account") }
+    add("Gmail", "Gmail secure sign-in", 76) { openSecureCustomTab(GMAIL_URL, "Gmail") }
+    add("Keyboard", "Open keyboard", 94) { focusAddressBar() }
+    add("★ Save", "Add bookmark", 84) { addCurrentBookmark() }
+    add("Bookmarks", "Bookmarks", 100) { showBookmarks() }
+    add("History", "Visited links", 82) { showVisitedLinks() }
+    add("Developer", "Developer tools and source", 96) { showDeveloperMenuAndroid() }
+    add("Download", "Download current file or page", 98) { downloadCurrentUrl() }
+    add("Open File", "Open last downloaded file", 94) { openLastDownloadedFile() }
+    add("Downloads", "Open Downloads", 94) { openDownloadsFolder() }
+    add("Privacy", "Toggle privacy blur for this tab", 86) { togglePrivacyBlur() }
+    add("Timed", "Timed site open", 76) { showTimedSiteMenu() }
+    add("Rotate", "Rotate tabs", 78) { showTabRotationDialog() }
+    add("Share", "Share current page", 76) { shareCurrentPage() }
+    add("Copy", "Copy current link", 72) { copyCurrentLink() }
+    add("Desktop", "Toggle desktop site", 88) { toggleDesktopMode() }
+    add("Default", "Default browser settings", 84) { openDefaultBrowserSettings() }
+    add("Links", "Manage custom toolbar links", 74) { showQuickLinksMenu() }
+    add("Settings", "Browser settings", 90) { showBrowserSettings() }
+    add("Help", "Browser help", 70) { showAddressHints() }
+
+    readQuickLinks().forEach { item ->
+      val label = item.first.take(14)
+      add(label, item.second, (label.length * 9 + 36).coerceIn(78, 150)) {
+        newTab(item.second)
+      }
+    }
   }
 
   private fun fixedButtonLp(widthDp: Int, heightDp: Int = 44): LinearLayout.LayoutParams =
@@ -877,7 +914,8 @@ class BrowserActivity : AppCompatActivity() {
             } else {
               items.removeAt(which)
               saveQuickLinks(items)
-              Toast.makeText(this, "Quick link removed", Toast.LENGTH_SHORT).show()
+              populateToolbar()
+              Toast.makeText(this, "Quick link removed from toolbar", Toast.LENGTH_SHORT).show()
             }
           }
           .setNegativeButton("Cancel", null)
@@ -925,8 +963,9 @@ class BrowserActivity : AppCompatActivity() {
         if (index == null || index !in items.indices) items.add(Pair(label, url))
         else items[index] = Pair(label, url)
         saveQuickLinks(items)
+        populateToolbar()
         dialog.dismiss()
-        Toast.makeText(this, "Quick link saved", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Quick link saved to toolbar", Toast.LENGTH_SHORT).show()
       }
     }
     dialog.show()
@@ -1136,26 +1175,51 @@ class BrowserActivity : AppCompatActivity() {
       host == "accounts.youtube.com"
   }
 
-  private fun openGoogleSignInSecurely(url: String = GOOGLE_SIGN_IN_URL) {
+  private fun openSecureCustomTab(url: String, label: String) {
     setFullScreenMode(false, false)
-    val safeUrl = if (isGoogleAuthenticationUrl(url)) url else GOOGLE_SIGN_IN_URL
     try {
       val customTabsIntent = CustomTabsIntent.Builder()
         .setShowTitle(true)
         .build()
-      customTabsIntent.launchUrl(this, Uri.parse(safeUrl))
+      customTabsIntent.launchUrl(this, Uri.parse(url))
       Toast.makeText(
         this,
-        "Google sign-in opened securely. Close the browser tab to return to Learn With Champak.",
+        "$label opened in Android's secure browser session. Close it to return here.",
         Toast.LENGTH_LONG
       ).show()
     } catch (_: Exception) {
-      openOutside(safeUrl)
+      openOutside(url)
     }
   }
 
+  private fun openGoogleSignInSecurely(url: String = GOOGLE_SIGN_IN_URL) {
+    val safeUrl = if (isGoogleAuthenticationUrl(url)) url else GOOGLE_SIGN_IN_URL
+    openSecureCustomTab(safeUrl, "Google sign-in")
+  }
+
   private fun openGoogleSignInOutside() {
-    openGoogleSignInSecurely()
+    openSecureCustomTab(GOOGLE_SIGN_IN_URL, "Google sign-in")
+  }
+
+  private fun showDeveloperMenuAndroid() {
+    val options = arrayOf(
+      "Open Android source repository",
+      "Copy current page URL",
+      "Open current page outside",
+      "Reload current page"
+    )
+    AlertDialog.Builder(this)
+      .setTitle("Developer")
+      .setItems(options) { _, which ->
+        when (which) {
+          0 -> openOutside(GITHUB_CODE_URL)
+          1 -> copyCurrentLink()
+          2 -> openOutside(activeTab()?.url ?: HOME_URL)
+          3 -> activeWebView()?.reload()
+        }
+      }
+      .setNegativeButton("Close", null)
+      .show()
   }
 
   private fun openOutside(url: String) {
