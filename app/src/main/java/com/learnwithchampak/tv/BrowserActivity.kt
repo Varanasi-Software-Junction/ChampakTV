@@ -3,6 +3,8 @@ package com.learnwithchampak.tv
 import android.app.AlertDialog
 import android.app.DownloadManager
 import android.app.TimePickerDialog
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
@@ -14,6 +16,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.os.Message
 import android.provider.Settings
 import android.text.InputType
@@ -56,7 +60,7 @@ class BrowserActivity : AppCompatActivity() {
     private const val HOME_URL = "https://www.learnwithchampak.live"
     private const val GOOGLE_SIGN_IN_URL = "https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Fwww.google.com%2F&hl=en"
     private const val GOOGLE_HOME_URL = "https://www.google.com"
-    private const val APK_URL = "https://programmer-s-picnic.github.io/json-images/tv/champak-tv.apk"
+    private const val PRIVACY_URL = "https://programmer-s-picnic.github.io/json-images/tv/privacy-policy.html"
     private const val PREFS = "champak_tabs_prefs"
     private const val KEY_DEFAULT_ASKED = "default_asked_browser"
     private const val KEY_BOOKMARKS = "browser_bookmarks"
@@ -65,6 +69,11 @@ class BrowserActivity : AppCompatActivity() {
     private const val KEY_PRIVATE_TABS = "browser_private_tabs"
     private const val KEY_CURRENT_TAB = "browser_current_tab"
     private const val KEY_LAST_DOWNLOAD_ID = "browser_last_download_id"
+    private const val KEY_SEARCH_ENGINE = "browser_search_engine"
+    private const val KEY_TEXT_ZOOM = "browser_text_zoom"
+    private const val KEY_DESKTOP_MODE = "browser_desktop_mode"
+    private const val KEY_ROTATION_SECONDS = "browser_rotation_seconds"
+    private const val KEY_QUICK_LINKS = "browser_quick_links"
     private const val MAX_HISTORY = 80
     private const val DESKTOP_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
   }
@@ -85,9 +94,11 @@ class BrowserActivity : AppCompatActivity() {
   private lateinit var pointer: TextView
   private lateinit var addressBar: AutoCompleteTextView
   private lateinit var titleText: TextView
+  private lateinit var rotationButton: Button
   private lateinit var prefs: SharedPreferences
 
   private val tabs = mutableListOf<BrowserTab>()
+  private val rotationHandler = Handler(Looper.getMainLooper())
   private var currentIndex = -1
   private var fullScreen = false
   private var pointerX = 0f
@@ -95,10 +106,19 @@ class BrowserActivity : AppCompatActivity() {
   private var longPressMenuShown = false
   private var restoringSession = false
   private var windowHasFocus = true
+  private var rotationActive = false
+  private var rotationPaused = false
+  private var rotationDeadlineMs = 0L
+  private var rotationSeconds = 30
+  private var desktopMode = false
+  private var textZoom = 100
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    rotationSeconds = prefs.getInt(KEY_ROTATION_SECONDS, 30).coerceIn(5, 300)
+    desktopMode = prefs.getBoolean(KEY_DESKTOP_MODE, false)
+    textZoom = prefs.getInt(KEY_TEXT_ZOOM, 100).coerceIn(75, 200)
     CookieManager.getInstance().setAcceptCookie(true)
     CookieManager.getInstance().flush()
     if (resources.configuration.screenWidthDp >= 700) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
@@ -149,6 +169,7 @@ class BrowserActivity : AppCompatActivity() {
   }
 
   override fun onDestroy() {
+    rotationHandler.removeCallbacksAndMessages(null)
     saveOpenTabs()
     CookieManager.getInstance().flush()
     tabs.forEach { it.webView.destroy() }
@@ -332,6 +353,9 @@ class BrowserActivity : AppCompatActivity() {
     brandActions.addView(btn("+ Tab", "New tab") { newTab(HOME_URL) }, fixedButtonLp(72))
     brandActions.addView(btn("Tabs", "Show tabs") { showTabs() }, fixedButtonLp(68))
     brandActions.addView(btn("Close", "Close tab") { closeCurrentTab() }, fixedButtonLp(72))
+    rotationButton = btn("Rotate", "Rotate tabs") { showTabRotationDialog() }.also {
+      brandActions.addView(it, fixedButtonLp(82))
+    }
     brandActions.addView(btn("Full", "Full screen") { setFullScreenMode(true, true) }, fixedButtonLp(68))
 
     val addressRow = LinearLayout(this).apply {
@@ -401,6 +425,7 @@ class BrowserActivity : AppCompatActivity() {
     nav.addView(btn("← Back", "Back") { goBackOrClose() }, fixedButtonLp(86))
     nav.addView(btn("Forward →", "Forward") { activeWebView()?.let { if (it.canGoForward()) it.goForward() } }, fixedButtonLp(104))
     nav.addView(btn("Reload", "Reload") { activeWebView()?.reload() }, fixedButtonLp(86))
+    nav.addView(btn("Find", "Find on page") { showFindOnPageDialog() }, fixedButtonLp(76))
     nav.addView(btn("Home", "Home") { loadInCurrent(HOME_URL) }, fixedButtonLp(80))
     nav.addView(btn("Keyboard", "Open keyboard") { focusAddressBar() }, fixedButtonLp(98))
     nav.addView(btn("Google", "Google sign-in securely") { openGoogleSignInSecurely() }, fixedButtonLp(92))
@@ -411,8 +436,12 @@ class BrowserActivity : AppCompatActivity() {
     nav.addView(btn("Open File", "Open last downloaded file") { openLastDownloadedFile() }, fixedButtonLp(98))
     nav.addView(btn("Privacy", "Toggle privacy blur for this tab") { togglePrivacyBlur() }, fixedButtonLp(90))
     nav.addView(btn("Timed", "Timed site open") { showTimedSiteMenu() }, fixedButtonLp(82))
+    nav.addView(btn("Links", "Quick links") { showQuickLinksMenu() }, fixedButtonLp(76))
+    nav.addView(btn("Share", "Share current page") { shareCurrentPage() }, fixedButtonLp(78))
+    nav.addView(btn("Copy", "Copy current link") { copyCurrentLink() }, fixedButtonLp(76))
+    nav.addView(btn("Desktop", "Toggle desktop site") { toggleDesktopMode() }, fixedButtonLp(92))
     nav.addView(btn("Outside", "Open outside") { openOutside(activeTab()?.url ?: HOME_URL) }, fixedButtonLp(92))
-    nav.addView(btn("Update", "Update app") { openOutside(APK_URL) }, fixedButtonLp(88))
+    nav.addView(btn("Settings", "Browser settings") { showBrowserSettings() }, fixedButtonLp(92))
     nav.addView(btn("Help", "Address bar hints") { showAddressHints() }, fixedButtonLp(76))
 
     val tabScroll = HorizontalScrollView(this).apply {
@@ -578,7 +607,8 @@ class BrowserActivity : AppCompatActivity() {
     web.settings.displayZoomControls = false
     web.settings.cacheMode = WebSettings.LOAD_DEFAULT
     web.settings.mediaPlaybackRequiresUserGesture = false
-    web.settings.userAgentString = DESKTOP_USER_AGENT
+    web.settings.userAgentString = if (desktopMode) DESKTOP_USER_AGENT else WebSettings.getDefaultUserAgent(this)
+    web.settings.textZoom = textZoom
     web.settings.javaScriptCanOpenWindowsAutomatically = true
     web.settings.setSupportMultipleWindows(true)
     web.settings.allowContentAccess = true
@@ -602,7 +632,7 @@ class BrowserActivity : AppCompatActivity() {
     focusWebPage()
   }
 
-  private fun switchTo(index: Int) {
+  private fun switchTo(index: Int, fromRotation: Boolean = false) {
     if (index !in tabs.indices) return
     currentIndex = index
     webHolder.removeAllViews()
@@ -614,6 +644,7 @@ class BrowserActivity : AppCompatActivity() {
     saveOpenTabs()
     applyPrivacyState()
     screen.post { ensurePointerVisible() }
+    if (rotationActive && !rotationPaused && !fromRotation) resetRotationDeadline()
   }
 
   private fun closeCurrentTab() {
@@ -624,6 +655,7 @@ class BrowserActivity : AppCompatActivity() {
     val old = tabs.removeAt(currentIndex)
     old.webView.destroy()
     switchTo(currentIndex.coerceAtMost(tabs.lastIndex))
+    if (rotationActive && tabs.size < 2) stopTabRotation("Rotation stopped — only one tab remains")
   }
 
   private fun refreshTabs() {
@@ -703,12 +735,399 @@ class BrowserActivity : AppCompatActivity() {
     if (value.isEmpty()) return "about:blank"
     if (value.startsWith("http://") || value.startsWith("https://") || value == "about:blank") return value
     if (value.startsWith("www.") || (value.contains(".") && !value.contains(" "))) return "https://$value"
-    return "https://www.google.com/search?q=${URLEncoder.encode(value, "UTF-8")}"
+    val query = URLEncoder.encode(value, "UTF-8")
+    return when (prefs.getString(KEY_SEARCH_ENGINE, "Google") ?: "Google") {
+      "Bing" -> "https://www.bing.com/search?q=$query"
+      "DuckDuckGo" -> "https://duckduckgo.com/?q=$query"
+      else -> "https://www.google.com/search?q=$query"
+    }
   }
 
   private fun activeTab(): BrowserTab? = tabs.getOrNull(currentIndex)
   private fun activeWebView(): WebView? = activeTab()?.webView
   private fun activeTabFor(view: WebView): BrowserTab? = tabs.firstOrNull { it.webView == view }
+
+
+  private fun showFindOnPageDialog() {
+    val input = EditText(this).apply {
+      hint = "Text to find"
+      setSingleLine(true)
+      inputType = InputType.TYPE_CLASS_TEXT
+    }
+    val dialog = AlertDialog.Builder(this)
+      .setTitle("Find on Page")
+      .setView(input)
+      .setPositiveButton("Find", null)
+      .setNeutralButton("Next", null)
+      .setNegativeButton("Done") { _, _ -> activeWebView()?.clearMatches() }
+      .create()
+    dialog.setOnShowListener {
+      dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+        val q = input.text.toString().trim()
+        if (q.isNotEmpty()) activeWebView()?.findAllAsync(q)
+      }
+      dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+        activeWebView()?.findNext(true)
+      }
+    }
+    dialog.setOnDismissListener { activeWebView()?.clearMatches() }
+    dialog.show()
+  }
+
+  private fun shareCurrentPage() {
+    val url = activeTab()?.url.orEmpty()
+    if (url.isBlank() || url == "about:blank") {
+      Toast.makeText(this, "No page to share", Toast.LENGTH_SHORT).show()
+      return
+    }
+    startActivity(
+      Intent.createChooser(
+        Intent(Intent.ACTION_SEND).apply {
+          type = "text/plain"
+          putExtra(Intent.EXTRA_SUBJECT, activeTab()?.title ?: "Web page")
+          putExtra(Intent.EXTRA_TEXT, url)
+        },
+        "Share page"
+      )
+    )
+  }
+
+  private fun copyCurrentLink() {
+    val url = activeTab()?.url.orEmpty()
+    if (url.isBlank() || url == "about:blank") {
+      Toast.makeText(this, "No page link to copy", Toast.LENGTH_SHORT).show()
+      return
+    }
+    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    clipboard.setPrimaryClip(ClipData.newPlainText("Web link", url))
+    Toast.makeText(this, "Link copied", Toast.LENGTH_SHORT).show()
+  }
+
+  private fun toggleDesktopMode() {
+    desktopMode = !desktopMode
+    prefs.edit().putBoolean(KEY_DESKTOP_MODE, desktopMode).apply()
+    tabs.forEach {
+      it.webView.settings.userAgentString =
+        if (desktopMode) DESKTOP_USER_AGENT else WebSettings.getDefaultUserAgent(this)
+    }
+    activeWebView()?.reload()
+    Toast.makeText(
+      this,
+      if (desktopMode) "Desktop site mode enabled" else "Mobile site mode enabled",
+      Toast.LENGTH_SHORT
+    ).show()
+  }
+
+  private fun readQuickLinks(): MutableList<Pair<String, String>> =
+    prefs.getString(KEY_QUICK_LINKS, "").orEmpty()
+      .lines()
+      .mapNotNull { line ->
+        val parts = line.split("\t", limit = 2)
+        if (parts.size == 2 && parts[0].isNotBlank() && parts[1].isNotBlank()) {
+          Pair(parts[0], parts[1])
+        } else null
+      }
+      .toMutableList()
+
+  private fun saveQuickLinks(items: List<Pair<String, String>>) {
+    prefs.edit().putString(
+      KEY_QUICK_LINKS,
+      items.joinToString("\n") { "${it.first.replace("\t", " ")}\t${it.second}" }
+    ).apply()
+  }
+
+  private fun showQuickLinksMenu() {
+    val items = readQuickLinks()
+    if (items.isEmpty()) {
+      AlertDialog.Builder(this)
+        .setTitle("Quick Links")
+        .setMessage("Add your own shortcuts for sites you use often.")
+        .setPositiveButton("Add Link") { _, _ -> showQuickLinkEditor() }
+        .setNegativeButton("Close", null)
+        .show()
+      return
+    }
+
+    AlertDialog.Builder(this)
+      .setTitle("Quick Links")
+      .setItems(items.map { "${it.first}\n${it.second}" }.toTypedArray()) { _, which ->
+        loadInCurrent(items[which].second)
+      }
+      .setPositiveButton("Add Link") { _, _ -> showQuickLinkEditor() }
+      .setNeutralButton("Manage") { _, _ -> showManageQuickLinks() }
+      .setNegativeButton("Close", null)
+      .show()
+  }
+
+  private fun showManageQuickLinks() {
+    val items = readQuickLinks()
+    if (items.isEmpty()) {
+      showQuickLinksMenu()
+      return
+    }
+    AlertDialog.Builder(this)
+      .setTitle("Manage Quick Links")
+      .setItems(items.map { it.first }.toTypedArray()) { _, which ->
+        val selected = items[which]
+        AlertDialog.Builder(this)
+          .setTitle(selected.first)
+          .setItems(arrayOf("Edit", "Remove")) { _, action ->
+            if (action == 0) {
+              showQuickLinkEditor(which, selected.first, selected.second)
+            } else {
+              items.removeAt(which)
+              saveQuickLinks(items)
+              Toast.makeText(this, "Quick link removed", Toast.LENGTH_SHORT).show()
+            }
+          }
+          .setNegativeButton("Cancel", null)
+          .show()
+      }
+      .setPositiveButton("Add Link") { _, _ -> showQuickLinkEditor() }
+      .setNegativeButton("Close", null)
+      .show()
+  }
+
+  private fun showQuickLinkEditor(index: Int? = null, oldLabel: String = "", oldUrl: String = "") {
+    val box = LinearLayout(this).apply {
+      orientation = LinearLayout.VERTICAL
+      setPadding(dp(20), dp(8), dp(20), 0)
+    }
+    val labelInput = EditText(this).apply {
+      hint = "Label, e.g. News"
+      setSingleLine(true)
+      setText(oldLabel)
+    }
+    val urlInput = EditText(this).apply {
+      hint = "https://example.com"
+      setSingleLine(true)
+      setText(oldUrl.ifBlank { activeTab()?.url?.takeIf { it != "about:blank" } ?: "" })
+    }
+    box.addView(labelInput)
+    box.addView(urlInput)
+
+    val dialog = AlertDialog.Builder(this)
+      .setTitle(if (index == null) "Add Quick Link" else "Edit Quick Link")
+      .setView(box)
+      .setPositiveButton("Save", null)
+      .setNegativeButton("Cancel", null)
+      .create()
+
+    dialog.setOnShowListener {
+      dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+        val label = labelInput.text.toString().trim()
+        val url = normalizeUrl(urlInput.text.toString())
+        if (label.isEmpty() || !(url.startsWith("http://") || url.startsWith("https://"))) {
+          Toast.makeText(this, "Enter a label and valid web address", Toast.LENGTH_LONG).show()
+          return@setOnClickListener
+        }
+        val items = readQuickLinks()
+        if (index == null || index !in items.indices) items.add(Pair(label, url))
+        else items[index] = Pair(label, url)
+        saveQuickLinks(items)
+        dialog.dismiss()
+        Toast.makeText(this, "Quick link saved", Toast.LENGTH_SHORT).show()
+      }
+    }
+    dialog.show()
+  }
+
+  private fun resetRotationDeadline() {
+    rotationDeadlineMs = System.currentTimeMillis() + rotationSeconds * 1000L
+  }
+
+  private val rotationTick = object : Runnable {
+    override fun run() {
+      if (!rotationActive) return
+      if (!rotationPaused) {
+        val remaining = ((rotationDeadlineMs - System.currentTimeMillis() + 999L) / 1000L)
+          .coerceAtLeast(0L)
+          .toInt()
+        if (::rotationButton.isInitialized) {
+          rotationButton.text = "⟳ ${remaining}s"
+          rotationButton.setBackgroundColor(Color.rgb(9, 121, 105))
+        }
+        if (remaining <= 0) {
+          if (tabs.size < 2) {
+            stopTabRotation("Rotation stopped — open at least two tabs")
+            return
+          }
+          switchTo((currentIndex + 1) % tabs.size, fromRotation = true)
+          resetRotationDeadline()
+        }
+      } else if (::rotationButton.isInitialized) {
+        rotationButton.text = "Ⅱ Rotate"
+        rotationButton.setBackgroundColor(Color.rgb(80, 93, 110))
+      }
+      rotationHandler.postDelayed(this, 500L)
+    }
+  }
+
+  private fun startTabRotation() {
+    if (tabs.size < 2) {
+      Toast.makeText(this, "Open at least two tabs first", Toast.LENGTH_LONG).show()
+      return
+    }
+    rotationActive = true
+    rotationPaused = false
+    resetRotationDeadline()
+    rotationHandler.removeCallbacks(rotationTick)
+    rotationHandler.post(rotationTick)
+    Toast.makeText(this, "Rotating tabs every $rotationSeconds seconds", Toast.LENGTH_SHORT).show()
+  }
+
+  private fun pauseTabRotation() {
+    if (!rotationActive) return
+    rotationPaused = true
+  }
+
+  private fun resumeTabRotation() {
+    if (!rotationActive) return
+    rotationPaused = false
+    resetRotationDeadline()
+  }
+
+  private fun stopTabRotation(message: String = "Tab rotation stopped") {
+    rotationActive = false
+    rotationPaused = false
+    rotationHandler.removeCallbacks(rotationTick)
+    if (::rotationButton.isInitialized) {
+      rotationButton.text = "Rotate"
+      rotationButton.setBackgroundColor(Color.rgb(8, 92, 156))
+    }
+    Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+  }
+
+  private fun showTabRotationDialog() {
+    val input = EditText(this).apply {
+      hint = "Seconds per tab (5–300)"
+      inputType = InputType.TYPE_CLASS_NUMBER
+      setSingleLine(true)
+      setText(rotationSeconds.toString())
+      selectAll()
+    }
+    val choices = arrayOf(
+      if (!rotationActive) "Start rotation" else "Restart with this duration",
+      if (rotationPaused) "Resume" else "Pause",
+      "Stop"
+    )
+    AlertDialog.Builder(this)
+      .setTitle("Rotate Tabs")
+      .setMessage(
+        "Each tab is shown in sequence. Default is 30 seconds.\n\n" +
+          "Current: ${if (!rotationActive) "Stopped" else if (rotationPaused) "Paused" else "Running"}"
+      )
+      .setView(input)
+      .setItems(choices) { _, which ->
+        when (which) {
+          0 -> {
+            val seconds = input.text.toString().toIntOrNull() ?: rotationSeconds
+            rotationSeconds = seconds.coerceIn(5, 300)
+            prefs.edit().putInt(KEY_ROTATION_SECONDS, rotationSeconds).apply()
+            startTabRotation()
+          }
+          1 -> if (rotationPaused) resumeTabRotation() else pauseTabRotation()
+          2 -> stopTabRotation()
+        }
+      }
+      .setNegativeButton("Close", null)
+      .show()
+  }
+
+  private fun showBrowserSettings() {
+    val engine = prefs.getString(KEY_SEARCH_ENGINE, "Google") ?: "Google"
+    val options = arrayOf(
+      "Search engine: $engine",
+      "Text size: $textZoom%",
+      "Desktop site: ${if (desktopMode) "On" else "Off"}",
+      "Tab rotation",
+      "Quick links",
+      "Clear browsing data",
+      "Default browser settings",
+      "Privacy policy"
+    )
+    AlertDialog.Builder(this)
+      .setTitle("Browser Settings")
+      .setItems(options) { _, which ->
+        when (which) {
+          0 -> showSearchEngineDialog()
+          1 -> showTextSizeDialog()
+          2 -> toggleDesktopMode()
+          3 -> showTabRotationDialog()
+          4 -> showQuickLinksMenu()
+          5 -> showClearBrowsingDataDialog()
+          6 -> openDefaultBrowserSettings()
+          7 -> openOutside(PRIVACY_URL)
+        }
+      }
+      .setNegativeButton("Close", null)
+      .show()
+  }
+
+  private fun showSearchEngineDialog() {
+    val engines = arrayOf("Google", "DuckDuckGo", "Bing")
+    val current = prefs.getString(KEY_SEARCH_ENGINE, "Google") ?: "Google"
+    AlertDialog.Builder(this)
+      .setTitle("Default Search Engine")
+      .setSingleChoiceItems(engines, engines.indexOf(current).coerceAtLeast(0)) { dialog, which ->
+        prefs.edit().putString(KEY_SEARCH_ENGINE, engines[which]).apply()
+        dialog.dismiss()
+        Toast.makeText(this, "${engines[which]} selected", Toast.LENGTH_SHORT).show()
+      }
+      .setNegativeButton("Cancel", null)
+      .show()
+  }
+
+  private fun showTextSizeDialog() {
+    val values = intArrayOf(75, 90, 100, 110, 125, 150, 175, 200)
+    AlertDialog.Builder(this)
+      .setTitle("Web Text Size")
+      .setSingleChoiceItems(
+        values.map { "$it%" }.toTypedArray(),
+        values.indexOf(textZoom).coerceAtLeast(0)
+      ) { dialog, which ->
+        textZoom = values[which]
+        prefs.edit().putInt(KEY_TEXT_ZOOM, textZoom).apply()
+        tabs.forEach { it.webView.settings.textZoom = textZoom }
+        dialog.dismiss()
+      }
+      .setNegativeButton("Cancel", null)
+      .show()
+  }
+
+  private fun showClearBrowsingDataDialog() {
+    val items = arrayOf("Visited history", "Cookies + cache", "All browsing data (keeps bookmarks)")
+    AlertDialog.Builder(this)
+      .setTitle("Clear Browsing Data")
+      .setItems(items) { _, which ->
+        when (which) {
+          0 -> {
+            saveList(KEY_HISTORY, emptyList())
+            refreshAddressSuggestions()
+          }
+          1 -> {
+            CookieManager.getInstance().removeAllCookies(null)
+            CookieManager.getInstance().flush()
+            tabs.forEach { it.webView.clearCache(true); it.webView.clearFormData() }
+          }
+          2 -> {
+            saveList(KEY_HISTORY, emptyList())
+            clearSavedSession()
+            CookieManager.getInstance().removeAllCookies(null)
+            CookieManager.getInstance().flush()
+            tabs.forEach {
+              it.webView.clearCache(true)
+              it.webView.clearFormData()
+              it.webView.clearHistory()
+            }
+            refreshAddressSuggestions()
+          }
+        }
+        Toast.makeText(this, "Browsing data cleared", Toast.LENGTH_SHORT).show()
+      }
+      .setNegativeButton("Cancel", null)
+      .show()
+  }
 
   private fun isGoogleAuthenticationUrl(url: String): Boolean {
     val host = try { Uri.parse(url).host?.lowercase().orEmpty() } catch (_: Exception) { "" }
@@ -1306,6 +1725,13 @@ class BrowserActivity : AppCompatActivity() {
       "Bookmarks",
       "Visited Links",
       "Timed Site Open",
+      "Rotate Tabs",
+      "Quick Links",
+      "Find on Page",
+      "Share Page",
+      "Copy Link",
+      if (desktopMode) "Use Mobile Site" else "Use Desktop Site",
+      "Browser Settings",
       "Back in Web Page",
       "Home",
       "Open Outside",
@@ -1332,13 +1758,20 @@ class BrowserActivity : AppCompatActivity() {
           9 -> showBookmarks()
           10 -> showVisitedLinks()
           11 -> showTimedSiteMenu()
-          12 -> goBackOrClose()
-          13 -> loadInCurrent(HOME_URL)
-          14 -> openOutside(activeTab()?.url ?: HOME_URL)
-          15 -> downloadCurrentUrl()
-          16 -> openLastDownloadedFile()
-          17 -> togglePrivacyBlur()
-          18 -> finish()
+          12 -> showTabRotationDialog()
+          13 -> showQuickLinksMenu()
+          14 -> showFindOnPageDialog()
+          15 -> shareCurrentPage()
+          16 -> copyCurrentLink()
+          17 -> toggleDesktopMode()
+          18 -> showBrowserSettings()
+          19 -> goBackOrClose()
+          20 -> loadInCurrent(HOME_URL)
+          21 -> openOutside(activeTab()?.url ?: HOME_URL)
+          22 -> downloadCurrentUrl()
+          23 -> openLastDownloadedFile()
+          24 -> togglePrivacyBlur()
+          25 -> finish()
         }
       }
       .setOnCancelListener { longPressMenuShown = false }
