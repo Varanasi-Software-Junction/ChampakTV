@@ -1,4 +1,4 @@
-name: Build Android TV APK
+name: Build Android Play Release
 
 on:
   push:
@@ -18,6 +18,11 @@ jobs:
           distribution: "temurin"
           java-version: "17"
 
+      - name: Install Android API 36
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;35.0.0"
+
       - name: Bundle latest Champak photo, launcher icon and TV banner
         run: |
           set -euo pipefail
@@ -26,21 +31,48 @@ jobs:
           curl -L "https://programmer-s-picnic.github.io/json-images/tv/champak-photo.png" -o app/src/main/assets/champak-photo.png
           cp app/src/main/assets/champak-photo.png app/src/main/res/drawable/champak_installer_icon.png
           cp app/src/main/assets/champak-photo.png app/src/main/res/drawable/app_banner_photo.png
-          ls -lh app/src/main/assets/champak-photo.png
-          ls -lh app/src/main/res/drawable/champak_installer_icon.png
-          ls -lh app/src/main/res/drawable/app_banner_photo.png
 
-      - name: Download Gradle 8.2
+      - name: Download Gradle 8.13
         run: |
-          curl -L -o gradle.zip https://services.gradle.org/distributions/gradle-8.2-bin.zip
+          curl -L -o gradle.zip https://services.gradle.org/distributions/gradle-8.13-bin.zip
           unzip -q gradle.zip
-          echo "$PWD/gradle-8.2/bin" >> $GITHUB_PATH
+          echo "$PWD/gradle-8.13/bin" >> $GITHUB_PATH
 
-      - name: Build Debug APK
-        run: gradle assembleDebug
+      - name: Prepare optional Play signing
+        shell: bash
+        env:
+          PLAY_STORE_KEYSTORE_BASE64: ${{ secrets.PLAY_STORE_KEYSTORE_BASE64 }}
+          PLAY_STORE_KEYSTORE_PASSWORD: ${{ secrets.PLAY_STORE_KEYSTORE_PASSWORD }}
+          PLAY_STORE_KEY_ALIAS: ${{ secrets.PLAY_STORE_KEY_ALIAS }}
+          PLAY_STORE_KEY_PASSWORD: ${{ secrets.PLAY_STORE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -n "${PLAY_STORE_KEYSTORE_BASE64:-}" ]; then
+            echo "$PLAY_STORE_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/play-upload-key.jks"
+            echo "PLAY_STORE_KEYSTORE_PATH=$RUNNER_TEMP/play-upload-key.jks" >> "$GITHUB_ENV"
+            echo "PLAY_STORE_KEYSTORE_PASSWORD=$PLAY_STORE_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+            echo "PLAY_STORE_KEY_ALIAS=$PLAY_STORE_KEY_ALIAS" >> "$GITHUB_ENV"
+            echo "PLAY_STORE_KEY_PASSWORD=$PLAY_STORE_KEY_PASSWORD" >> "$GITHUB_ENV"
+            echo "Play signing key loaded."
+          else
+            echo "No Play signing secrets configured; release AAB will be unsigned."
+          fi
 
-      - name: Upload APK artifact
+      - name: Build test APK and release AAB
+        run: gradle clean assembleDebug bundleRelease
+
+      - name: Upload test APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: pp-tv-apk-demo-apk
           path: app/build/outputs/apk/debug/*.apk
+
+      - name: Upload Play Store AAB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: learn-with-champak-play-release-aab
+          path: app/build/outputs/bundle/release/*.aab
+
+      - name: Show release outputs
+        run: |
+          find app/build/outputs -maxdepth 5 -type f -print
