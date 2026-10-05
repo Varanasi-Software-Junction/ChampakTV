@@ -452,7 +452,7 @@ class BrowserActivity : AppCompatActivity() {
     root.addView(webHolder, LinearLayout.LayoutParams(-1, 0, 1f))
 
     privacyOverlay = TextView(this).apply {
-      text = "PRIVATE TAB\nClick/return to Learn With Champak to reveal"
+      text = "PRIVATE TAB\nReturn to the browser to reveal"
       textSize = 24f
       gravity = Gravity.CENTER
       setTextColor(Color.WHITE)
@@ -1778,7 +1778,7 @@ class BrowserActivity : AppCompatActivity() {
     longPressMenuShown = true
     val options = arrayOf(
       "Return to Browser Buttons",
-      "Return to First Screen",
+      "New Blank Tab",
       if (fullScreen) "Show Controls" else "Full Screen Web Page",
       "Focus Web Page / Pointer",
       "Open Keyboard / Address Bar",
@@ -1811,7 +1811,7 @@ class BrowserActivity : AppCompatActivity() {
         longPressMenuShown = false
         when (which) {
           0 -> returnToBrowserButtons()
-          1 -> returnToFirstScreen()
+          1 -> newTab("about:blank")
           2 -> setFullScreenMode(!fullScreen, true)
           3 -> focusWebPage()
           4 -> focusAddressBar()
