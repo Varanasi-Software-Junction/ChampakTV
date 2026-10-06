@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.RenderEffect
 import android.graphics.Shader
@@ -835,8 +836,8 @@ class BrowserActivity : AppCompatActivity() {
     add("▶ YouTube", "YouTube", 88) { newTab(YOUTUBE_URL) }
     add("▣ WhatsApp Web", "WhatsApp Web", 112) { newTab(WHATSAPP_URL) }
     add("⌕ Google", "Google Search", 82) { newTab(GOOGLE_HOME_URL) }
-    add("● G Account", "Google Account secure sign-in", 100) { openSecureCustomTab(GOOGLE_SIGN_IN_URL, "Google Account") }
-    add("✉ Gmail", "Gmail secure sign-in", 78) { openSecureCustomTab(GOOGLE_GMAIL_SIGN_IN_URL, "Gmail") }
+    add("● G Account", "Google Account secure sign-in", 100) { openGoogleExternalBrowser(GOOGLE_SIGN_IN_URL, "Google Account") }
+    add("✉ Gmail", "Gmail secure sign-in", 78) { openGoogleExternalBrowser(GOOGLE_GMAIL_SIGN_IN_URL, "Gmail") }
     add("⚑ Add Bookmark", "Add bookmark", 112, true) { addCurrentBookmark() }
     add("▣ Bookmarks", "Bookmarks", 104, true) { showBookmarks() }
     add("◴ History", "Visited links", 86) { showVisitedLinks() }
@@ -1581,33 +1582,75 @@ class BrowserActivity : AppCompatActivity() {
       host == "myaccount.google.com"
   }
 
-  private fun openSecureCustomTab(url: String, label: String) {
+  private fun preferredExternalBrowserPackage(): String? {
+    val preferred = listOf(
+      "com.android.chrome",
+      "com.chrome.beta",
+      "com.chrome.dev",
+      "com.chrome.canary"
+    )
+
+    for (candidate in preferred) {
+      try {
+        packageManager.getPackageInfo(candidate, 0)
+        return candidate
+      } catch (_: Exception) {
+      }
+    }
+
+    return try {
+      val probe = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com")).apply {
+        addCategory(Intent.CATEGORY_BROWSABLE)
+      }
+      packageManager
+        .queryIntentActivities(probe, PackageManager.MATCH_DEFAULT_ONLY)
+        .mapNotNull { it.activityInfo?.packageName }
+        .firstOrNull { it != packageName }
+    } catch (_: Exception) {
+      null
+    }
+  }
+
+  private fun openGoogleExternalBrowser(url: String, label: String) {
     setFullScreenMode(false, false)
+    val browserPackage = preferredExternalBrowserPackage()
+
     try {
-      val customTabsIntent = CustomTabsIntent.Builder()
-        .setShowTitle(true)
-        .build()
-      customTabsIntent.launchUrl(this, Uri.parse(url))
+      val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+        addCategory(Intent.CATEGORY_BROWSABLE)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (!browserPackage.isNullOrBlank()) setPackage(browserPackage)
+      }
+      startActivity(intent)
       Toast.makeText(
         this,
-        "$label opened in Android's secure browser session. Close it to return here.",
+        "$label opened in the secure system browser for Google authentication.",
         Toast.LENGTH_LONG
       ).show()
     } catch (_: Exception) {
-      openOutside(url)
+      try {
+        val customTabsIntent = CustomTabsIntent.Builder()
+          .setShowTitle(true)
+          .build()
+        if (!browserPackage.isNullOrBlank()) {
+          customTabsIntent.intent.setPackage(browserPackage)
+        }
+        customTabsIntent.launchUrl(this, Uri.parse(url))
+      } catch (_: Exception) {
+        Toast.makeText(this, "No external browser is available for Google sign-in", Toast.LENGTH_LONG).show()
+      }
     }
   }
 
   private fun openGoogleSignInSecurely(url: String = GOOGLE_SIGN_IN_URL) {
-    // Preserve a website's full OAuth URL including client_id, redirect_uri,
-    // scope, state and PKCE parameters. Only use our account chooser when
-    // the toolbar explicitly starts a generic Google sign-in.
+    // Preserve a site's complete OAuth URL. Google intentionally blocks
+    // embedded WebView authentication; a real browser session is required.
     val safeUrl = if (isGoogleAuthenticationUrl(url)) url else GOOGLE_SIGN_IN_URL
-    openSecureCustomTab(safeUrl, "Google sign-in")
+    openGoogleExternalBrowser(safeUrl, "Google sign-in")
   }
 
   private fun openGoogleSignInOutside() {
-    openSecureCustomTab(GOOGLE_SIGN_IN_URL, "Google Account")
+    openGoogleExternalBrowser(GOOGLE_SIGN_IN_URL, "Google Account")
   }
 
   private fun showDeveloperMenuAndroid() {
