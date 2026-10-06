@@ -9,6 +9,9 @@ concurrency:
   group: champak-tv-android-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -84,3 +87,25 @@ jobs:
       - name: Show release outputs
         run: |
           find app/build/outputs -maxdepth 5 -type f -print
+
+      - name: Publish large APK as GitHub Release asset
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION_NAME="$(grep -oP 'versionName\s+"\K[^"]+' app/build.gradle | head -n 1)"
+          TAG="v${VERSION_NAME}"
+          APK_PATH="$(find app/build/outputs/apk/debug -type f -name '*.apk' | head -n 1)"
+          ASSET_NAME="Learn-With-Champak-Browser-${TAG}-Gecko.apk"
+
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --target "$GITHUB_SHA" \
+              --title "Learn With Champak Browser ${TAG}" \
+              --notes "GeckoView browser release for Android and Android TV. Includes Windows-style browser chrome, persistent address bar, history/bookmark suggestions and in-browser Google authentication."
+          fi
+
+          cp "$APK_PATH" "$RUNNER_TEMP/$ASSET_NAME"
+          gh release upload "$TAG" "$RUNNER_TEMP/$ASSET_NAME" --clobber
+          echo "Published: https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${ASSET_NAME}"
