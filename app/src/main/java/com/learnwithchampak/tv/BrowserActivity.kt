@@ -12,6 +12,8 @@ import android.content.pm.ActivityInfo
 import android.graphics.Color
 import android.graphics.RenderEffect
 import android.graphics.Shader
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -41,12 +43,18 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.browser.customtabs.CustomTabsIntent
+import java.net.HttpURLConnection
+import java.net.URL
 import java.net.URLEncoder
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.math.max
 import kotlin.math.min
 
@@ -81,6 +89,9 @@ class BrowserActivity : AppCompatActivity() {
     private const val KEY_DESKTOP_MODE = "browser_desktop_mode"
     private const val KEY_ROTATION_SECONDS = "browser_rotation_seconds"
     private const val KEY_QUICK_LINKS = "browser_quick_links"
+    private const val KEY_WEATHER_CITY = "browser_weather_city"
+    private const val KEY_WEATHER_LAT = "browser_weather_lat"
+    private const val KEY_WEATHER_LON = "browser_weather_lon"
     private const val MAX_HISTORY = 80
     private const val DESKTOP_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
   }
@@ -103,10 +114,15 @@ class BrowserActivity : AppCompatActivity() {
   private lateinit var titleText: TextView
   private lateinit var rotationButton: Button
   private lateinit var navBar: LinearLayout
+  private lateinit var clockTimeText: TextView
+  private lateinit var clockDateText: TextView
+  private lateinit var weatherText: TextView
+  private lateinit var statusText: TextView
   private lateinit var prefs: SharedPreferences
 
   private val tabs = mutableListOf<BrowserTab>()
   private val rotationHandler = Handler(Looper.getMainLooper())
+  private val chromeHandler = Handler(Looper.getMainLooper())
   private var currentIndex = -1
   private var fullScreen = false
   private var pointerX = 0f
@@ -120,6 +136,7 @@ class BrowserActivity : AppCompatActivity() {
   private var rotationSeconds = 30
   private var desktopMode = false
   private var textZoom = 100
+  private var weatherLoading = false
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
@@ -131,6 +148,8 @@ class BrowserActivity : AppCompatActivity() {
     CookieManager.getInstance().flush()
     if (resources.configuration.screenWidthDp >= 700) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
     buildUi()
+    startChromeClock()
+    refreshWeather()
     val requestedUrl = intent?.data?.toString().orEmpty().ifBlank { intent.getStringExtra(EXTRA_URL).orEmpty() }
     val timedOpen = intent?.getBooleanExtra(EXTRA_TIMED_OPEN, false) == true
     val startFresh = intent?.getBooleanExtra(EXTRA_START_FRESH, false) == true
@@ -178,6 +197,7 @@ class BrowserActivity : AppCompatActivity() {
 
   override fun onDestroy() {
     rotationHandler.removeCallbacksAndMessages(null)
+    chromeHandler.removeCallbacksAndMessages(null)
     saveOpenTabs()
     CookieManager.getInstance().flush()
     tabs.forEach { it.webView.destroy() }
@@ -323,70 +343,158 @@ class BrowserActivity : AppCompatActivity() {
     }
     screen.addView(root, FrameLayout.LayoutParams(-1, -1))
 
+    val compactUi = resources.configuration.screenWidthDp < 700
+    val wideUi = resources.configuration.screenWidthDp >= 900
+
     header = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
-      setPadding(dp(10), dp(8), dp(10), dp(8))
-      setBackgroundColor(Color.rgb(4, 45, 82))
+      setPadding(dp(if (compactUi) 6 else 10), dp(6), dp(if (compactUi) 6 else 10), dp(5))
+      setBackgroundColor(Color.rgb(5, 93, 139))
     }
     root.addView(header, LinearLayout.LayoutParams(-1, -2))
 
-    val compactUi = resources.configuration.screenWidthDp < 700
-
-    val brandRow = LinearLayout(this).apply {
+    // Windows-style brand / clock / weather / utility row.
+    val topScroll = HorizontalScrollView(this).apply {
+      isHorizontalScrollBarEnabled = false
+      isFillViewport = wideUi
+      overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+    }
+    val topRow = LinearLayout(this).apply {
       orientation = LinearLayout.HORIZONTAL
       gravity = Gravity.CENTER_VERTICAL
-      setPadding(dp(4), 0, dp(4), 0)
+      setPadding(dp(2), dp(2), dp(2), dp(4))
     }
-    header.addView(brandRow, LinearLayout.LayoutParams(-1, dp(if (compactUi) 34 else 42)))
+    topScroll.addView(topRow, ViewGroup.LayoutParams(if (wideUi) -1 else -2, dp(if (compactUi) 66 else 72)))
+    header.addView(topScroll, LinearLayout.LayoutParams(-1, dp(if (compactUi) 68 else 74)))
 
+    val avatar = ImageView(this).apply {
+      setImageResource(com.learnwithchampak.tv.R.drawable.champak_installer_icon)
+      scaleType = ImageView.ScaleType.CENTER_CROP
+      background = roundedBg(Color.rgb(9, 63, 100), dp(24), Color.WHITE, dp(1))
+      clipToOutline = Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP
+    }
+    topRow.addView(avatar, LinearLayout.LayoutParams(dp(48), dp(48)).apply { marginEnd = dp(8) })
+
+    val brand = LinearLayout(this).apply {
+      orientation = LinearLayout.VERTICAL
+      gravity = Gravity.CENTER_VERTICAL
+      setPadding(0, 0, dp(10), 0)
+    }
     titleText = TextView(this).apply {
-      text = "Learn With Champak Browser"
+      text = "Champak's Browser v${appVersionName()}"
       setTextColor(Color.WHITE)
       textSize = if (compactUi) 15f else 18f
+      typeface = Typeface.DEFAULT_BOLD
       maxLines = 1
-      gravity = Gravity.CENTER_VERTICAL
-      setPadding(dp(8), 0, dp(8), 0)
     }
-    brandRow.addView(titleText, LinearLayout.LayoutParams(-1, -1))
+    val tagline = TextView(this).apply {
+      text = "Learn With Champak • Designed by Champak Roy • Strictly for learning purposes"
+      setTextColor(Color.rgb(255, 221, 74))
+      textSize = if (compactUi) 9.5f else 10.5f
+      typeface = Typeface.DEFAULT_BOLD
+      maxLines = 1
+    }
+    brand.addView(titleText)
+    brand.addView(tagline)
+    topRow.addView(brand, LinearLayout.LayoutParams(if (wideUi) 0 else dp(470), -1, if (wideUi) 1f else 0f))
 
-    val brandActionsScroll = HorizontalScrollView(this).apply {
+    val clockCard = LinearLayout(this).apply {
+      orientation = LinearLayout.VERTICAL
+      gravity = Gravity.CENTER_VERTICAL
+      setPadding(dp(12), dp(5), dp(12), dp(5))
+      background = roundedBg(Color.rgb(9, 92, 137), dp(12), Color.rgb(72, 174, 218), dp(1))
+    }
+    clockTimeText = TextView(this).apply {
+      setTextColor(Color.WHITE)
+      textSize = if (compactUi) 13f else 15f
+      typeface = Typeface.DEFAULT_BOLD
+    }
+    clockDateText = TextView(this).apply {
+      setTextColor(Color.rgb(255, 226, 96))
+      textSize = if (compactUi) 8.5f else 9.5f
+      typeface = Typeface.DEFAULT_BOLD
+    }
+    clockCard.addView(clockTimeText)
+    clockCard.addView(clockDateText)
+    topRow.addView(clockCard, LinearLayout.LayoutParams(dp(160), dp(54)).apply { marginEnd = dp(8) })
+
+    weatherText = TextView(this).apply {
+      text = "Weather loading..."
+      setTextColor(Color.WHITE)
+      textSize = if (compactUi) 9f else 10f
+      typeface = Typeface.DEFAULT_BOLD
+      gravity = Gravity.CENTER_VERTICAL
+      setPadding(dp(12), dp(5), dp(12), dp(5))
+      background = roundedBg(Color.rgb(9, 92, 137), dp(12), Color.rgb(72, 174, 218), dp(1))
+      setOnClickListener { showWeatherLocationDialog() }
+      isFocusable = true
+    }
+    topRow.addView(weatherText, LinearLayout.LayoutParams(dp(190), dp(54)).apply { marginEnd = dp(8) })
+
+    topRow.addView(chromePill("How to Use", true) { showAddressHints() })
+    topRow.addView(chromePill("Contact", true) { showContactDialog() })
+    topRow.addView(chromePill("☰ Menu", false) { showBrowserCommandMenu() })
+
+    // Tabs row first, matching Windows.
+    val tabsRow = LinearLayout(this).apply {
+      orientation = LinearLayout.HORIZONTAL
+      gravity = Gravity.CENTER_VERTICAL
+      setBackgroundColor(Color.rgb(2, 37, 64))
+      setPadding(dp(2), dp(2), dp(2), dp(2))
+    }
+    val tabsLabel = TextView(this).apply {
+      text = "Tabs"
+      setTextColor(Color.WHITE)
+      textSize = 11f
+      typeface = Typeface.DEFAULT_BOLD
+      gravity = Gravity.CENTER
+    }
+    tabsRow.addView(tabsLabel, LinearLayout.LayoutParams(dp(38), dp(36)))
+
+    val tabScroll = HorizontalScrollView(this).apply {
       isHorizontalScrollBarEnabled = false
       overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
     }
-    val brandActions = LinearLayout(this).apply {
+    tabStrip = LinearLayout(this).apply {
       orientation = LinearLayout.HORIZONTAL
       gravity = Gravity.CENTER_VERTICAL
-      setPadding(dp(2), 0, dp(2), 0)
+      setPadding(dp(2), dp(1), dp(2), dp(1))
     }
-    brandActionsScroll.addView(brandActions, ViewGroup.LayoutParams(-2, -1))
-    header.addView(brandActionsScroll, LinearLayout.LayoutParams(-1, dp(if (compactUi) 42 else 46)))
+    tabScroll.addView(tabStrip, ViewGroup.LayoutParams(-2, dp(36)))
+    tabsRow.addView(tabScroll, LinearLayout.LayoutParams(0, dp(38), 1f))
 
-    brandActions.addView(btn("+ Tab", "New tab") { newTab(HOME_URL) }, fixedButtonLp(72, if (compactUi) 38 else 42))
-    brandActions.addView(btn("Blank", "New blank tab") { newTab("about:blank") }, fixedButtonLp(72, if (compactUi) 38 else 42))
-    brandActions.addView(btn("Tabs", "Show tabs") { showTabs() }, fixedButtonLp(68, if (compactUi) 38 else 42))
-    brandActions.addView(btn("Close", "Close tab") { closeCurrentTab() }, fixedButtonLp(72, if (compactUi) 38 else 42))
-    rotationButton = btn("Rotate", "Rotate tabs") { showTabRotationDialog() }.also {
-      brandActions.addView(it, fixedButtonLp(82, if (compactUi) 38 else 42))
+    val tabsActions = LinearLayout(this).apply {
+      orientation = LinearLayout.HORIZONTAL
+      gravity = Gravity.CENTER_VERTICAL
     }
-    brandActions.addView(btn("Full", "Full screen") { setFullScreenMode(true, true) }, fixedButtonLp(68, if (compactUi) 38 else 42))
+    rotationButton = chromePill("⟳ Rotate", true) { showTabRotationDialog() }
+    tabsActions.addView(rotationButton)
+    tabsActions.addView(chromePill("＋ New", true) { newTab(HOME_URL) })
+    tabsActions.addView(chromePill("▣ List", true) { showTabs() })
+    tabsActions.addView(chromePill("⏱ Timed", true) { showTimedSiteMenu() })
+    tabsRow.addView(tabsActions, LinearLayout.LayoutParams(-2, dp(38)))
+    header.addView(tabsRow, LinearLayout.LayoutParams(-1, dp(40)))
 
+    // Address row.
     val addressRow = LinearLayout(this).apply {
       orientation = LinearLayout.HORIZONTAL
       gravity = Gravity.CENTER_VERTICAL
-      setPadding(0, dp(7), 0, dp(7))
+      setPadding(0, dp(5), 0, dp(5))
     }
-    header.addView(addressRow, LinearLayout.LayoutParams(-1, dp(if (compactUi) 60 else 68)))
+    addressRow.addView(btn("← Back", "Back") { goBackOrClose() }, fixedButtonLp(72, if (compactUi) 42 else 46))
+    addressRow.addView(btn("→ Forward", "Forward") { activeWebView()?.let { if (it.canGoForward()) it.goForward() } }, fixedButtonLp(88, if (compactUi) 42 else 46))
+    addressRow.addView(btn("⟳ Reload", "Reload") { activeWebView()?.reload() }, fixedButtonLp(82, if (compactUi) 42 else 46))
 
     addressBar = AutoCompleteTextView(this).apply {
       hint = "Search Google or type a website address"
       threshold = 1
       setSingleLine(true)
-      textSize = if (compactUi) 16f else 18f
+      textSize = if (compactUi) 15f else 17f
       setTextColor(Color.rgb(3, 44, 84))
       setHintTextColor(Color.rgb(100, 120, 138))
-      setBackgroundColor(Color.WHITE)
-      setPadding(dp(18), 0, dp(18), 0)
-      minHeight = dp(if (compactUi) 48 else 54)
+      background = roundedBg(Color.WHITE, dp(12), Color.WHITE, 0)
+      setPadding(dp(14), 0, dp(14), 0)
+      minHeight = dp(if (compactUi) 42 else 46)
       imeOptions = EditorInfo.IME_ACTION_GO
       setSelectAllOnFocus(false)
       setOnFocusChangeListener { _, hasFocus ->
@@ -417,13 +525,17 @@ class BrowserActivity : AppCompatActivity() {
         } else false
       }
     }
-    addressRow.addView(addressBar, LinearLayout.LayoutParams(0, dp(if (compactUi) 48 else 54), 1f).apply {
-      marginEnd = dp(8)
+    addressRow.addView(addressBar, LinearLayout.LayoutParams(0, dp(if (compactUi) 42 else 46), 1f).apply {
+      marginStart = dp(4)
+      marginEnd = dp(6)
     })
-    addressRow.addView(btn("GO", "Open address") { openAddressBarValue() }, fixedButtonLp(70, if (compactUi) 48 else 54))
+    addressRow.addView(chromePill("▶ Go", true) { openAddressBarValue() })
+    addressRow.addView(btn("⛶ Full Screen", "Full screen") { setFullScreenMode(true, true) }, fixedButtonLp(104, if (compactUi) 42 else 46))
+    header.addView(addressRow, LinearLayout.LayoutParams(-1, dp(if (compactUi) 52 else 56)))
 
+    // Main shortcut toolbar.
     val navScroll = HorizontalScrollView(this).apply {
-      isHorizontalScrollBarEnabled = true
+      isHorizontalScrollBarEnabled = false
       isFillViewport = true
       overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
     }
@@ -435,19 +547,14 @@ class BrowserActivity : AppCompatActivity() {
     header.addView(navScroll, LinearLayout.LayoutParams(-1, dp(if (compactUi) 42 else 46)))
     populateToolbar(compactUi)
 
-    val tabScroll = HorizontalScrollView(this).apply {
-      isHorizontalScrollBarEnabled = true
-      isFillViewport = true
-      setBackgroundColor(Color.rgb(2, 30, 58))
-      overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+    statusText = TextView(this).apply {
+      text = "🎓 Learn With Champak    Ready"
+      setTextColor(Color.WHITE)
+      textSize = if (compactUi) 9.5f else 10.5f
+      setPadding(dp(4), dp(1), dp(4), dp(1))
+      setBackgroundColor(Color.rgb(3, 99, 144))
     }
-    tabStrip = LinearLayout(this).apply {
-      orientation = LinearLayout.HORIZONTAL
-      gravity = Gravity.CENTER_VERTICAL
-      setPadding(dp(4), dp(2), dp(4), dp(2))
-    }
-    tabScroll.addView(tabStrip, ViewGroup.LayoutParams(-2, dp(40)))
-    header.addView(tabScroll, LinearLayout.LayoutParams(-1, dp(42)))
+    header.addView(statusText, LinearLayout.LayoutParams(-1, dp(22)))
 
     webHolder = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
     root.addView(webHolder, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -490,6 +597,199 @@ class BrowserActivity : AppCompatActivity() {
     setContentView(screen)
     refreshAddressSuggestions()
     screen.post { centerPointerInWebPage() }
+  }
+
+  private fun appVersionName(): String {
+    return try {
+      packageManager.getPackageInfo(packageName, 0).versionName ?: "3"
+    } catch (_: Exception) {
+      "3"
+    }
+  }
+
+  private fun roundedBg(fill: Int, radius: Int, stroke: Int, strokeWidth: Int): GradientDrawable =
+    GradientDrawable().apply {
+      setColor(fill)
+      cornerRadius = radius.toFloat()
+      if (strokeWidth > 0) setStroke(strokeWidth, stroke)
+    }
+
+  private fun chromePill(label: String, yellow: Boolean, action: () -> Unit): Button =
+    Button(this).apply {
+      text = label
+      textSize = 10.5f
+      isAllCaps = false
+      typeface = Typeface.DEFAULT_BOLD
+      setTextColor(if (yellow) Color.BLACK else Color.WHITE)
+      background = roundedBg(
+        if (yellow) Color.rgb(255, 199, 0) else Color.rgb(27, 112, 160),
+        dp(18),
+        if (yellow) Color.rgb(255, 214, 58) else Color.rgb(54, 149, 199),
+        dp(1)
+      )
+      setPadding(dp(10), 0, dp(10), 0)
+      minWidth = 0
+      minHeight = dp(34)
+      setOnClickListener { action() }
+      setOnFocusChangeListener { v, hasFocus ->
+        v.scaleX = if (hasFocus) 1.06f else 1f
+        v.scaleY = if (hasFocus) 1.06f else 1f
+        v.elevation = if (hasFocus) dp(8).toFloat() else dp(1).toFloat()
+      }
+      layoutParams = LinearLayout.LayoutParams(-2, dp(34)).apply { marginEnd = dp(6) }
+      isFocusable = true
+    }
+
+  private val chromeClockTick = object : Runnable {
+    override fun run() {
+      if (::clockTimeText.isInitialized) {
+        clockTimeText.text = "◷  " + SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+        clockDateText.text = SimpleDateFormat("EEEE, d MMM yyyy", Locale.getDefault()).format(Date())
+      }
+      chromeHandler.postDelayed(this, 1000L)
+    }
+  }
+
+  private fun startChromeClock() {
+    chromeHandler.removeCallbacks(chromeClockTick)
+    chromeHandler.post(chromeClockTick)
+  }
+
+  private fun showContactDialog() {
+    AlertDialog.Builder(this)
+      .setTitle("Contact")
+      .setMessage("Champak Roy\n\nEmail: champaksworld@gmail.com\nWhatsApp / Phone: +91 9335874326")
+      .setPositiveButton("Email") { _, _ ->
+        openOutside("mailto:champaksworld@gmail.com")
+      }
+      .setNeutralButton("WhatsApp") { _, _ ->
+        openOutside("https://wa.me/919335874326")
+      }
+      .setNegativeButton("Close", null)
+      .show()
+  }
+
+  private fun showWeatherLocationDialog() {
+    val input = EditText(this).apply {
+      hint = "City, e.g. Varanasi"
+      setSingleLine(true)
+      setText(prefs.getString(KEY_WEATHER_CITY, "Varanasi") ?: "Varanasi")
+      selectAll()
+    }
+    val dialog = AlertDialog.Builder(this)
+      .setTitle("Weather Location")
+      .setView(input)
+      .setPositiveButton("Set", null)
+      .setNeutralButton("Varanasi") { _, _ ->
+        prefs.edit()
+          .putString(KEY_WEATHER_CITY, "Varanasi")
+          .putString(KEY_WEATHER_LAT, "25.3176")
+          .putString(KEY_WEATHER_LON, "82.9739")
+          .apply()
+        refreshWeather()
+      }
+      .setNegativeButton("Cancel", null)
+      .create()
+
+    dialog.setOnShowListener {
+      dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+        val city = input.text.toString().trim()
+        if (city.isEmpty()) return@setOnClickListener
+        resolveWeatherCity(city) { ok ->
+          if (ok) dialog.dismiss()
+        }
+      }
+    }
+    dialog.show()
+  }
+
+  private fun resolveWeatherCity(city: String, done: (Boolean) -> Unit) {
+    if (weatherLoading) return
+    weatherLoading = true
+    weatherText.text = "Finding $city..."
+    Thread {
+      try {
+        val q = URLEncoder.encode(city, "UTF-8")
+        val conn = URL("https://geocoding-api.open-meteo.com/v1/search?name=$q&count=1&language=en&format=json").openConnection() as HttpURLConnection
+        conn.connectTimeout = 8000
+        conn.readTimeout = 8000
+        val body = conn.inputStream.bufferedReader().use { it.readText() }
+        val results = org.json.JSONObject(body).optJSONArray("results")
+        if (results == null || results.length() == 0) throw IllegalArgumentException("Location not found")
+        val row = results.getJSONObject(0)
+        val nameParts = listOf(
+          row.optString("name"),
+          row.optString("admin1"),
+          row.optString("country")
+        ).filter { it.isNotBlank() }.distinct()
+        val label = nameParts.joinToString(", ")
+        prefs.edit()
+          .putString(KEY_WEATHER_CITY, label)
+          .putString(KEY_WEATHER_LAT, row.getDouble("latitude").toString())
+          .putString(KEY_WEATHER_LON, row.getDouble("longitude").toString())
+          .apply()
+        runOnUiThread {
+          weatherLoading = false
+          refreshWeather()
+          done(true)
+        }
+      } catch (e: Exception) {
+        runOnUiThread {
+          weatherLoading = false
+          weatherText.text = "Weather unavailable\nTap to set location"
+          Toast.makeText(this, e.message ?: "Location not found", Toast.LENGTH_LONG).show()
+          done(false)
+        }
+      }
+    }.start()
+  }
+
+  private fun refreshWeather() {
+    if (!::weatherText.isInitialized || weatherLoading) return
+    val city = prefs.getString(KEY_WEATHER_CITY, "Varanasi") ?: "Varanasi"
+    val lat = prefs.getString(KEY_WEATHER_LAT, "25.3176") ?: "25.3176"
+    val lon = prefs.getString(KEY_WEATHER_LON, "82.9739") ?: "82.9739"
+    weatherLoading = true
+    weatherText.text = "☀  $city\nWeather loading..."
+    Thread {
+      try {
+        val url = "https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m&timezone=auto"
+        val conn = URL(url).openConnection() as HttpURLConnection
+        conn.connectTimeout = 8000
+        conn.readTimeout = 8000
+        val body = conn.inputStream.bufferedReader().use { it.readText() }
+        val current = org.json.JSONObject(body).getJSONObject("current")
+        val temp = current.optDouble("temperature_2m", Double.NaN)
+        val feels = current.optDouble("apparent_temperature", Double.NaN)
+        val wind = current.optDouble("wind_speed_10m", Double.NaN)
+        val code = current.optInt("weather_code", -1)
+        val condition = weatherCondition(code)
+        val shortCity = if (city.length > 24) city.take(22) + "…" else city
+        val text = "☀  $shortCity\n${temp.toInt()}°C • $condition\nFeels ${feels.toInt()}°C • Wind ${wind.toInt()} km/h"
+        runOnUiThread {
+          weatherLoading = false
+          weatherText.text = text
+        }
+      } catch (_: Exception) {
+        runOnUiThread {
+          weatherLoading = false
+          weatherText.text = "☁  $city\nWeather unavailable\nTap to change location"
+        }
+      }
+    }.start()
+  }
+
+  private fun weatherCondition(code: Int): String = when (code) {
+    0 -> "Clear sky"
+    1, 2 -> "Partly cloudy"
+    3 -> "Overcast"
+    45, 48 -> "Fog"
+    in 51..57 -> "Drizzle"
+    in 61..67 -> "Rain"
+    in 71..77 -> "Snow"
+    in 80..82 -> "Showers"
+    in 95..99 -> "Thunderstorm"
+    else -> "Weather"
   }
 
   private fun populateToolbar(compactUi: Boolean = resources.configuration.screenWidthDp < 700) {
