@@ -796,47 +796,49 @@ class BrowserActivity : AppCompatActivity() {
     if (!::navBar.isInitialized) return
     navBar.removeAllViews()
     val h = if (compactUi) 38 else 42
-    fun add(label: String, desc: String, width: Int, action: () -> Unit) {
-      navBar.addView(btn(label, desc, action), fixedButtonLp(width, h))
+
+    fun add(label: String, desc: String, width: Int, important: Boolean = false, action: () -> Unit) {
+      val button = btn(label, desc, action, fixedButtonLp(width, h))
+      if (important) {
+        button.setTextColor(Color.BLACK)
+        button.background = roundedBg(
+          Color.rgb(255, 193, 7),
+          dp(18),
+          Color.rgb(255, 213, 79),
+          dp(1)
+        )
+        button.typeface = Typeface.DEFAULT_BOLD
+      }
+      navBar.addView(button)
     }
 
-    add("← Back", "Back", 82) { goBackOrClose() }
-    add("Forward →", "Forward", 102) { activeWebView()?.let { if (it.canGoForward()) it.goForward() } }
-    add("Reload", "Reload", 82) { activeWebView()?.reload() }
-    add("Find", "Find on page", 72) { showFindOnPageDialog() }
-    add("Home", "Home", 76) { loadInCurrent(HOME_URL) }
-    add("Learn", "Learn With Champak", 78) { newTab(HOME_URL) }
-    add("Kashi", "Inside Kashi", 76) { newTab(INSIDE_KASHI_URL) }
-    add("YouTube", "YouTube", 86) { newTab(YOUTUBE_URL) }
-    add("WhatsApp", "WhatsApp Web", 92) { newTab(WHATSAPP_URL) }
-    add("Google", "Google Search", 82) { newTab(GOOGLE_HOME_URL) }
-    add("G Account", "Google Account secure sign-in", 98) { openSecureCustomTab(GOOGLE_SIGN_IN_URL, "Google Account") }
-    add("Gmail", "Gmail secure sign-in", 76) { openSecureCustomTab(GOOGLE_GMAIL_SIGN_IN_URL, "Gmail") }
-    add("Keyboard", "Open keyboard", 94) { focusAddressBar() }
-    add("★ Save", "Add bookmark", 84) { addCurrentBookmark() }
-    add("Bookmarks", "Bookmarks", 100) { showBookmarks() }
-    add("History", "Visited links", 82) { showVisitedLinks() }
-    add("Developer", "Developer tools and source", 96) { showDeveloperMenuAndroid() }
-    add("Download", "Download current file or page", 98) { downloadCurrentUrl() }
-    add("Open File", "Open last downloaded file", 94) { openLastDownloadedFile() }
-    add("Downloads", "Open Downloads", 94) { openDownloadsFolder() }
-    add("Privacy", "Toggle privacy blur for this tab", 86) { togglePrivacyBlur() }
-    add("Timed", "Timed site open", 76) { showTimedSiteMenu() }
-    add("Rotate", "Rotate tabs", 78) { showTabRotationDialog() }
-    add("Share", "Share current page", 76) { shareCurrentPage() }
-    add("Copy", "Copy current link", 72) { copyCurrentLink() }
-    add("Desktop", "Toggle desktop site", 88) { toggleDesktopMode() }
-    add("Default", "Default browser settings", 84) { openDefaultBrowserSettings() }
-    add("Links", "Manage custom toolbar links", 74) { showQuickLinksMenu() }
-    add("Settings", "Browser settings", 90) { showBrowserSettings() }
-    add("Help", "Browser help", 70) { showAddressHints() }
+    // Match the Windows browser's visible toolbar order.
+    add("⌂ Home", "Home", 78) { loadInCurrent(HOME_URL) }
+    add("🎓 Learn With Champak", "Learn With Champak", 150, true) { newTab(HOME_URL) }
+    add("▶ YouTube", "YouTube", 88) { newTab(YOUTUBE_URL) }
+    add("▣ WhatsApp Web", "WhatsApp Web", 112) { newTab(WHATSAPP_URL) }
+    add("⌕ Google", "Google Search", 82) { newTab(GOOGLE_HOME_URL) }
+    add("● G Account", "Google Account secure sign-in", 100) { openSecureCustomTab(GOOGLE_SIGN_IN_URL, "Google Account") }
+    add("✉ Gmail", "Gmail secure sign-in", 78) { openSecureCustomTab(GOOGLE_GMAIL_SIGN_IN_URL, "Gmail") }
+    add("⚑ Add Bookmark", "Add bookmark", 112, true) { addCurrentBookmark() }
+    add("▣ Bookmarks", "Bookmarks", 104, true) { showBookmarks() }
+    add("◴ History", "Visited links", 86) { showVisitedLinks() }
+    add("⚑ Developer", "Developer tools and source", 98, true) { showDeveloperMenuAndroid() }
+    add("↓ Download", "Download current file or page", 98, true) { downloadCurrentUrl() }
+    add("▭ Downloads", "Open Downloads", 96) { openDownloadsFolder() }
+    add("◉ Privacy", "Toggle privacy blur for this tab", 88) { togglePrivacyBlur() }
+    add("Groww", "Open Groww", 78, true) { newTab("https://groww.in") }
 
+    // Windows custom links are represented by Android Quick Links and become
+    // first-class toolbar buttons here.
     readQuickLinks().forEach { item ->
       val label = item.first.take(14)
-      add(label, item.second, (label.length * 9 + 36).coerceIn(78, 150)) {
+      add(label, item.second, (label.length * 9 + 36).coerceIn(78, 150), true) {
         newTab(item.second)
       }
     }
+
+    add("⚙ Manage", "Browser settings and toolbar links", 90, true) { showBrowserSettings() }
   }
 
   private fun fixedButtonLp(widthDp: Int, heightDp: Int = 44): LinearLayout.LayoutParams =
@@ -878,7 +880,9 @@ class BrowserActivity : AppCompatActivity() {
       webChromeClient = object : WebChromeClient() {
         override fun onReceivedTitle(view: WebView, title: String) {
           activeTabFor(view)?.title = title.ifBlank { activeTabFor(view)?.url ?: "Page" }
-          if (view == activeWebView()) titleText.text = title.ifBlank { activeTab()?.url ?: "Page" }
+          if (view == activeWebView() && ::statusText.isInitialized) {
+            statusText.text = "🎓 Learn With Champak    " + title.ifBlank { activeTab()?.url ?: "Ready" }
+          }
           refreshTabs()
           saveOpenTabs()
         }
@@ -976,7 +980,13 @@ class BrowserActivity : AppCompatActivity() {
     webHolder.removeAllViews()
     webHolder.addView(tabs[index].webView, FrameLayout.LayoutParams(-1, -1))
     webHolder.addView(privacyOverlay, FrameLayout.LayoutParams(-1, -1))
-    titleText.text = if (!windowHasFocus && tabs[index].privacyBlur) "Private Tab" else tabs[index].title
+    if (::statusText.isInitialized) {
+      statusText.text = if (!windowHasFocus && tabs[index].privacyBlur) {
+        "🎓 Learn With Champak    Private Tab"
+      } else {
+        "🎓 Learn With Champak    " + tabs[index].title
+      }
+    }
     addressBar.setText(if (tabs[index].url == "about:blank") "" else tabs[index].url, false)
     refreshTabs()
     saveOpenTabs()
@@ -1035,7 +1045,9 @@ class BrowserActivity : AppCompatActivity() {
 
     privacyOverlay.visibility = if (hide) View.VISIBLE else View.GONE
     if (::titleText.isInitialized && tab != null) {
-      titleText.text = if (hide) "Private Tab" else tab.title
+      if (::statusText.isInitialized) {
+        statusText.text = if (hide) "🎓 Learn With Champak    Private Tab" else "🎓 Learn With Champak    " + tab.title
+      }
     }
     refreshTabs()
   }
