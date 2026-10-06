@@ -19,9 +19,10 @@
       android:theme="@style/Theme.AppCompat.DayNight.NoActionBar">
 
     <activity
-        android:name=".BrowserActivity"
+        android:name=".GeckoBrowserActivity"
         android:exported="true"
         android:launchMode="singleTask"
+        android:windowSoftInputMode="stateUnspecified|adjustResize"
         android:configChanges="keyboard|keyboardHidden|orientation|screenSize|uiMode">
       <intent-filter>
         <action android:name="android.intent.action.MAIN" />
@@ -44,6 +45,13 @@
         <data android:scheme="https" />
       </intent-filter>
     </activity>
+
+    <!-- Kept as a non-exported rollback implementation during Gecko rollout. -->
+    <activity
+        android:name=".BrowserActivity"
+        android:exported="false"
+        android:launchMode="singleTask"
+        android:configChanges="keyboard|keyboardHidden|orientation|screenSize|uiMode" />
 
     <receiver
         android:name=".TimedSiteBootReceiver"
