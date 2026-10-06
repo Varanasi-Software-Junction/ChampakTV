@@ -509,7 +509,7 @@ class BrowserActivity : AppCompatActivity() {
           refreshAddressSuggestions()
           showKeyboard()
           postDelayed({
-            if (adapter?.count ?: 0 > 0) showDropDown()
+            if ((adapter?.count ?: 0) > 0) showDropDown()
           }, 120)
         }
       }
@@ -543,7 +543,7 @@ class BrowserActivity : AppCompatActivity() {
       addressBar.requestFocus()
       showKeyboard()
       addressBar.postDelayed({
-        if (addressBar.adapter?.count ?: 0 > 0) addressBar.showDropDown()
+        if ((addressBar.adapter?.count ?: 0) > 0) addressBar.showDropDown()
       }, 80)
     })
     addressRow.addView(chromePill("▶ Go", true) { openAddressBarValue() })
@@ -1616,29 +1616,26 @@ class BrowserActivity : AppCompatActivity() {
     val browserPackage = preferredExternalBrowserPackage()
 
     try {
-      val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-        addCategory(Intent.CATEGORY_BROWSABLE)
-        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        if (!browserPackage.isNullOrBlank()) setPackage(browserPackage)
+      if (!browserPackage.isNullOrBlank()) {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+          addCategory(Intent.CATEGORY_BROWSABLE)
+          addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+          setPackage(browserPackage)
+        }
+        startActivity(intent)
+      } else {
+        val customTabsIntent = CustomTabsIntent.Builder()
+          .setShowTitle(true)
+          .build()
+        customTabsIntent.launchUrl(this, Uri.parse(url))
       }
-      startActivity(intent)
       Toast.makeText(
         this,
         "$label opened in the secure system browser for Google authentication.",
         Toast.LENGTH_LONG
       ).show()
     } catch (_: Exception) {
-      try {
-        val customTabsIntent = CustomTabsIntent.Builder()
-          .setShowTitle(true)
-          .build()
-        if (!browserPackage.isNullOrBlank()) {
-          customTabsIntent.intent.setPackage(browserPackage)
-        }
-        customTabsIntent.launchUrl(this, Uri.parse(url))
-      } catch (_: Exception) {
-        Toast.makeText(this, "No external browser is available for Google sign-in", Toast.LENGTH_LONG).show()
-      }
+      Toast.makeText(this, "No external browser is available for Google sign-in", Toast.LENGTH_LONG).show()
     }
   }
 
@@ -1993,7 +1990,7 @@ class BrowserActivity : AppCompatActivity() {
         "Visited links are saved automatically.\n\n" +
           "Move the yellow pointer to the address bar and press OK. Start typing part of a visited link, then choose the matching saved link.\n\n" +
           "Type google sign in, accounts.google.com or press G to open Google sign-in securely.\n\n" +
-          "Google authentication opens in an Android secure browser tab rather than the embedded WebView. Close that tab to return here."
+          "Google authentication opens in Chrome or another installed browser because Google blocks account sign-in inside embedded WebView. Return here after finishing sign-in."
       )
       .setPositiveButton("Open Address Bar") { _, _ -> focusAddressBar() }
       .setNegativeButton("Close", null)
