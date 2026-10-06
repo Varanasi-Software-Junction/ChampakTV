@@ -16,10 +16,10 @@ android {
 
   defaultConfig {
     applicationId "com.learnwithchampak.tv"
-    minSdk 21
+    minSdk 26
     targetSdk 36
-    versionCode 37
-    versionName "3.1.1"
+    versionCode 38
+    versionName "4.0.0"
   }
 
   signingConfigs {
@@ -54,6 +54,7 @@ android {
 }
 
 dependencies {
+  implementation "org.mozilla.geckoview:geckoview:157.0.20260924084938"
   implementation "androidx.core:core-ktx:1.15.0"
   implementation "androidx.appcompat:appcompat:1.7.1"
   implementation "androidx.browser:browser:1.8.0"
