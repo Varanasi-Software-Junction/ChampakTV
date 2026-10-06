@@ -71,8 +71,8 @@ class BrowserActivity : AppCompatActivity() {
     private const val WHATSAPP_URL = "https://web.whatsapp.com"
     private const val GOOGLE_ACCOUNT_URL = "https://myaccount.google.com/"
     private const val GMAIL_URL = "https://mail.google.com/mail/u/0/"
-    private const val GOOGLE_SIGN_IN_URL = "https://accounts.google.com/AccountChooser?continue=https%3A%2F%2Fmyaccount.google.com%2F&hl=en"
-    private const val GOOGLE_GMAIL_SIGN_IN_URL = "https://accounts.google.com/AccountChooser?continue=https%3A%2F%2Fmail.google.com%2Fmail%2Fu%2F0%2F&hl=en"
+    private const val GOOGLE_SIGN_IN_URL = "https://accounts.google.com/ServiceLogin?service=accountsettings&continue=https%3A%2F%2Fmyaccount.google.com%2F&hl=en"
+    private const val GOOGLE_GMAIL_SIGN_IN_URL = "https://accounts.google.com/ServiceLogin?service=mail&continue=https%3A%2F%2Fmail.google.com%2Fmail%2Fu%2F0%2F&hl=en"
     private const val GOOGLE_HOME_URL = "https://www.google.com"
     private const val GITHUB_CODE_URL = "https://github.com/Programmer-s-Picnic/json-images/tree/main/windows_app"
     private const val PRIVACY_URL = "https://programmer-s-picnic.github.io/json-images/tv/privacy-policy.html"
@@ -118,6 +118,9 @@ class BrowserActivity : AppCompatActivity() {
   private lateinit var clockDateText: TextView
   private lateinit var weatherText: TextView
   private lateinit var statusText: TextView
+  private lateinit var topChromeRow: View
+  private lateinit var tabsChromeRow: View
+  private lateinit var toolbarChromeRow: View
   private lateinit var prefs: SharedPreferences
 
   private val tabs = mutableListOf<BrowserTab>()
@@ -366,6 +369,7 @@ class BrowserActivity : AppCompatActivity() {
     }
     topScroll.addView(topRow, ViewGroup.LayoutParams(if (wideUi) -1 else -2, dp(if (compactUi) 66 else 72)))
     header.addView(topScroll, LinearLayout.LayoutParams(-1, dp(if (compactUi) 68 else 74)))
+    topChromeRow = topScroll
 
     val avatar = ImageView(this).apply {
       setImageResource(com.learnwithchampak.tv.R.drawable.champak_installer_icon)
@@ -474,6 +478,7 @@ class BrowserActivity : AppCompatActivity() {
     tabsActions.addView(chromePill("⏱ Timed", true) { showTimedSiteMenu() })
     tabsRow.addView(tabsActions, LinearLayout.LayoutParams(-2, dp(38)))
     header.addView(tabsRow, LinearLayout.LayoutParams(-1, dp(40)))
+    tabsChromeRow = tabsRow
 
     // Address row.
     val addressRow = LinearLayout(this).apply {
@@ -487,7 +492,7 @@ class BrowserActivity : AppCompatActivity() {
 
     addressBar = AutoCompleteTextView(this).apply {
       hint = "Search Google or type a website address"
-      threshold = 1
+      threshold = 0
       setSingleLine(true)
       textSize = if (compactUi) 15f else 17f
       setTextColor(Color.rgb(3, 44, 84))
@@ -502,7 +507,9 @@ class BrowserActivity : AppCompatActivity() {
         if (hasFocus) {
           refreshAddressSuggestions()
           showKeyboard()
-          postDelayed({ showDropDown() }, 200)
+          postDelayed({
+            if (adapter?.count ?: 0 > 0) showDropDown()
+          }, 120)
         }
       }
       setOnClickListener {
@@ -512,9 +519,10 @@ class BrowserActivity : AppCompatActivity() {
       }
       setOnItemClickListener { _, _, position, _ ->
         val value = adapter?.getItem(position)?.toString().orEmpty()
-        if (value.isNotBlank()) {
-          setText(value, false)
-          loadInCurrent(value)
+        val url = suggestionUrl(value)
+        if (url.isNotBlank()) {
+          setText(url, false)
+          loadInCurrent(url)
           hideKeyboardAndFocusPage()
         }
       }
@@ -528,6 +536,14 @@ class BrowserActivity : AppCompatActivity() {
     addressRow.addView(addressBar, LinearLayout.LayoutParams(0, dp(if (compactUi) 42 else 46), 1f).apply {
       marginStart = dp(4)
       marginEnd = dp(6)
+    })
+    addressRow.addView(chromePill("▼", false) {
+      refreshAddressSuggestions()
+      addressBar.requestFocus()
+      showKeyboard()
+      addressBar.postDelayed({
+        if (addressBar.adapter?.count ?: 0 > 0) addressBar.showDropDown()
+      }, 80)
     })
     addressRow.addView(chromePill("▶ Go", true) { openAddressBarValue() })
     addressRow.addView(btn("⛶ Full Screen", "Full screen") { setFullScreenMode(true, true) }, fixedButtonLp(104, if (compactUi) 42 else 46))
@@ -545,6 +561,7 @@ class BrowserActivity : AppCompatActivity() {
     }
     navScroll.addView(navBar, ViewGroup.LayoutParams(-2, dp(if (compactUi) 40 else 44)))
     header.addView(navScroll, LinearLayout.LayoutParams(-1, dp(if (compactUi) 42 else 46)))
+    toolbarChromeRow = navScroll
     populateToolbar(compactUi)
 
     statusText = TextView(this).apply {
@@ -1007,12 +1024,86 @@ class BrowserActivity : AppCompatActivity() {
   }
 
   private fun refreshTabs() {
+    if (!::tabStrip.isInitialized) return
     tabStrip.removeAllViews()
     tabs.forEachIndexed { i, tab ->
       val shownTitle = if (!windowHasFocus && tab.privacyBlur) "Private Tab" else tab.title
       val privacyMark = if (tab.privacyBlur) "P " else ""
-      val label = if (i == currentIndex) "● ${privacyMark}${i + 1}: ${shownTitle.take(18)}" else "${privacyMark}${i + 1}: ${shownTitle.take(18)}"
-      tabStrip.addView(btn(label, "Tab ${i + 1}") { switchTo(i) }, LinearLayout.LayoutParams(0, -1, 1f))
+      val label = if (i == currentIndex) "● ${privacyMark}${i + 1}. ${shownTitle.take(20)}" else "${privacyMark}${i + 1}. ${shownTitle.take(20)}"
+
+      val chip = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        background = roundedBg(
+          if (i == currentIndex) Color.rgb(15, 90, 137) else Color.rgb(5, 55, 92),
+          dp(12),
+          if (i == currentIndex) Color.rgb(255, 199, 0) else Color.rgb(68, 139, 185),
+          dp(if (i == currentIndex) 2 else 1)
+        )
+        setPadding(dp(2), 0, dp(2), 0)
+      }
+
+      val tabButton = Button(this).apply {
+        text = label
+        textSize = 10.5f
+        isAllCaps = false
+        typeface = Typeface.DEFAULT_BOLD
+        setTextColor(if (i == currentIndex) Color.rgb(255, 226, 96) else Color.WHITE)
+        setBackgroundColor(Color.TRANSPARENT)
+        setPadding(dp(8), 0, dp(6), 0)
+        minWidth = dp(110)
+        minHeight = dp(32)
+        setOnClickListener { switchTo(i) }
+        isFocusable = true
+      }
+
+      val closeButton = Button(this).apply {
+        text = "×"
+        contentDescription = "Close tab ${i + 1}"
+        textSize = 18f
+        isAllCaps = false
+        typeface = Typeface.DEFAULT_BOLD
+        setTextColor(Color.WHITE)
+        setBackgroundColor(Color.TRANSPARENT)
+        setPadding(0, 0, 0, 0)
+        minWidth = dp(34)
+        minimumWidth = 0
+        minHeight = dp(32)
+        setOnClickListener { closeTabAt(i) }
+        isFocusable = true
+      }
+
+      chip.addView(tabButton, LinearLayout.LayoutParams(-2, dp(32)))
+      chip.addView(closeButton, LinearLayout.LayoutParams(dp(34), dp(32)))
+      tabStrip.addView(chip, LinearLayout.LayoutParams(-2, dp(34)).apply {
+        marginEnd = dp(5)
+      })
+    }
+  }
+
+  private fun closeTabAt(index: Int) {
+    if (index !in tabs.indices) return
+    if (tabs.size <= 1) {
+      currentIndex = 0
+      loadInCurrent("about:blank")
+      refreshTabs()
+      return
+    }
+
+    val wasCurrent = index == currentIndex
+    val old = tabs.removeAt(index)
+    old.webView.destroy()
+
+    currentIndex = when {
+      tabs.isEmpty() -> -1
+      index < currentIndex -> currentIndex - 1
+      wasCurrent -> index.coerceAtMost(tabs.lastIndex)
+      else -> currentIndex.coerceIn(0, tabs.lastIndex)
+    }
+
+    switchTo(currentIndex)
+    if (rotationActive && tabs.size < 2) {
+      stopTabRotation("Rotation stopped — only one tab remains")
     }
   }
 
@@ -1633,27 +1724,47 @@ class BrowserActivity : AppCompatActivity() {
     prefs.edit().putString(key, values.joinToString("\n")).apply()
   }
 
+  private fun addressSuggestionItems(): List<String> {
+    val bookmarks = readList(KEY_BOOKMARKS)
+      .filter { it.isNotBlank() && it != "about:blank" }
+      .distinct()
+      .map { "★ Bookmark  •  $it" }
+
+    val bookmarkSet = readList(KEY_BOOKMARKS).toSet()
+    val history = readList(KEY_HISTORY)
+      .filter { it.isNotBlank() && it != "about:blank" && it !in bookmarkSet }
+      .distinct()
+      .take(60)
+      .map { "◴ History  •  $it" }
+
+    return (bookmarks + history).distinct()
+  }
+
+  private fun suggestionUrl(value: String): String {
+    val marker = "  •  "
+    return if (value.contains(marker)) value.substringAfter(marker).trim() else value.trim()
+  }
+
   private fun savedLinks(): List<String> {
     val combined = mutableListOf<String>()
     combined.addAll(readList(KEY_BOOKMARKS))
     combined.addAll(readList(KEY_HISTORY))
-    combined.add(GOOGLE_SIGN_IN_URL)
     combined.add(GOOGLE_HOME_URL)
     return combined.distinct().filter { it.isNotBlank() && it != "about:blank" }
   }
 
   private fun refreshAddressSuggestions() {
     if (!::addressBar.isInitialized) return
-    val items = savedLinks()
+    val items = addressSuggestionItems()
     val adapter = ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, items)
     addressBar.setAdapter(adapter)
   }
 
   private fun findSavedLink(input: String): String? {
-    val q = input.trim()
-    if (q.isEmpty()) return null
-    val qLower = q.lowercase()
-    return savedLinks().firstOrNull { it.equals(q, ignoreCase = true) }
+    val raw = suggestionUrl(input)
+    if (raw.isEmpty()) return null
+    val qLower = raw.lowercase()
+    return savedLinks().firstOrNull { it.equals(raw, ignoreCase = true) }
       ?: savedLinks().firstOrNull { it.lowercase().contains(qLower) }
   }
 
@@ -1867,7 +1978,16 @@ class BrowserActivity : AppCompatActivity() {
 
   private fun setFullScreenMode(enabled: Boolean, focusPageAfterToggle: Boolean) {
     fullScreen = enabled
-    header.visibility = if (enabled) View.GONE else View.VISIBLE
+
+    // The address bar is deliberately never hidden. Full Screen means
+    // "maximum web page area with a pinned address/search row", matching a
+    // browser rather than a video player.
+    header.visibility = View.VISIBLE
+    if (::topChromeRow.isInitialized) topChromeRow.visibility = if (enabled) View.GONE else View.VISIBLE
+    if (::tabsChromeRow.isInitialized) tabsChromeRow.visibility = if (enabled) View.GONE else View.VISIBLE
+    if (::toolbarChromeRow.isInitialized) toolbarChromeRow.visibility = if (enabled) View.GONE else View.VISIBLE
+    if (::statusText.isInitialized) statusText.visibility = if (enabled) View.GONE else View.VISIBLE
+
     window.decorView.systemUiVisibility = if (enabled) {
       View.SYSTEM_UI_FLAG_FULLSCREEN or
         View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
