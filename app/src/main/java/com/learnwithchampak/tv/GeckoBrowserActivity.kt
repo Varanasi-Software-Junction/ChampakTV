@@ -489,26 +489,52 @@ class GeckoBrowserActivity : AppCompatActivity() {
     header.addView(tabsRow, LinearLayout.LayoutParams(-1, dp(40)))
     tabsChromeRow = tabsRow
 
-    // Address row.
+    // Address/search controls. On small phones the address bar gets its own
+    // full-width row so it never competes with navigation buttons.
+    if (compactUi) {
+      val mobileNavRow = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(0, dp(2), 0, dp(2))
+      }
+      mobileNavRow.addView(btn("← Back", "Back") { goBackOrClose() }, LinearLayout.LayoutParams(0, dp(38), 1f).apply { marginEnd = dp(3) })
+      mobileNavRow.addView(btn("Forward →", "Forward") { activeTab()?.takeIf { it.canGoForward }?.session?.goForward() }, LinearLayout.LayoutParams(0, dp(38), 1f).apply { marginEnd = dp(3) })
+      mobileNavRow.addView(btn("⟳ Reload", "Reload") { activeSession()?.reload() }, LinearLayout.LayoutParams(0, dp(38), 1f).apply { marginEnd = dp(3) })
+      mobileNavRow.addView(btn("⛶ Full", "Full screen") { setFullScreenMode(true, true) }, LinearLayout.LayoutParams(0, dp(38), 1f))
+      header.addView(mobileNavRow, LinearLayout.LayoutParams(-1, dp(42)))
+    }
+
     val addressRow = LinearLayout(this).apply {
       orientation = LinearLayout.HORIZONTAL
       gravity = Gravity.CENTER_VERTICAL
-      setPadding(0, dp(5), 0, dp(5))
+      setPadding(dp(if (compactUi) 2 else 0), dp(5), dp(if (compactUi) 2 else 0), dp(5))
+      if (compactUi) {
+        background = roundedBg(Color.rgb(1, 45, 75), dp(12), Color.rgb(76, 201, 240), dp(1))
+      }
     }
-    addressRow.addView(btn("← Back", "Back") { goBackOrClose() }, fixedButtonLp(72, if (compactUi) 42 else 46))
-    addressRow.addView(btn("→ Forward", "Forward") { activeTab()?.takeIf { it.canGoForward }?.session?.goForward() }, fixedButtonLp(88, if (compactUi) 42 else 46))
-    addressRow.addView(btn("⟳ Reload", "Reload") { activeSession()?.reload() }, fixedButtonLp(82, if (compactUi) 42 else 46))
+
+    if (!compactUi) {
+      addressRow.addView(btn("← Back", "Back") { goBackOrClose() }, fixedButtonLp(72, 46))
+      addressRow.addView(btn("→ Forward", "Forward") { activeTab()?.takeIf { it.canGoForward }?.session?.goForward() }, fixedButtonLp(88, 46))
+      addressRow.addView(btn("⟳ Reload", "Reload") { activeSession()?.reload() }, fixedButtonLp(82, 46))
+    }
 
     addressBar = AutoCompleteTextView(this).apply {
-      hint = "Search Google or type a website address"
+      hint = if (compactUi) "Search or enter address…" else "Search Google or type a website address"
       threshold = 0
       setSingleLine(true)
-      textSize = if (compactUi) 15f else 17f
+      textSize = if (compactUi) 17f else 17f
+      typeface = Typeface.DEFAULT_BOLD
       setTextColor(Color.rgb(3, 44, 84))
-      setHintTextColor(Color.rgb(100, 120, 138))
-      background = roundedBg(Color.WHITE, dp(12), Color.WHITE, 0)
-      setPadding(dp(14), 0, dp(14), 0)
-      minHeight = dp(if (compactUi) 42 else 46)
+      setHintTextColor(Color.rgb(79, 104, 126))
+      background = roundedBg(
+        Color.WHITE,
+        dp(12),
+        if (compactUi) Color.rgb(255, 199, 0) else Color.WHITE,
+        if (compactUi) dp(2) else 0
+      )
+      setPadding(dp(if (compactUi) 16 else 14), 0, dp(12), 0)
+      minHeight = dp(if (compactUi) 50 else 46)
       imeOptions = EditorInfo.IME_ACTION_GO
       setSelectAllOnFocus(false)
       setOnFocusChangeListener { _, hasFocus ->
@@ -542,21 +568,37 @@ class GeckoBrowserActivity : AppCompatActivity() {
         } else false
       }
     }
-    addressRow.addView(addressBar, LinearLayout.LayoutParams(0, dp(if (compactUi) 42 else 46), 1f).apply {
-      marginStart = dp(4)
-      marginEnd = dp(6)
+
+    addressRow.addView(addressBar, LinearLayout.LayoutParams(0, dp(if (compactUi) 50 else 46), 1f).apply {
+      marginStart = dp(if (compactUi) 4 else 4)
+      marginEnd = dp(5)
     })
-    addressRow.addView(chromePill("▼", false) {
+
+    val suggestionButton = chromePill(if (compactUi) "▼" else "▼", false) {
       refreshAddressSuggestions()
       addressBar.requestFocus()
       showKeyboard()
       addressBar.postDelayed({
         if ((addressBar.adapter?.count ?: 0) > 0) addressBar.showDropDown()
       }, 80)
-    })
-    addressRow.addView(chromePill("▶ Go", true) { openAddressBarValue() })
-    addressRow.addView(btn("⛶ Full Screen", "Full screen") { setFullScreenMode(true, true) }, fixedButtonLp(104, if (compactUi) 42 else 46))
-    header.addView(addressRow, LinearLayout.LayoutParams(-1, dp(if (compactUi) 52 else 56)))
+    }
+    suggestionButton.contentDescription = "Show bookmark and history suggestions"
+    suggestionButton.layoutParams = LinearLayout.LayoutParams(dp(if (compactUi) 46 else 52), dp(if (compactUi) 50 else 42)).apply {
+      marginEnd = dp(4)
+    }
+    addressRow.addView(suggestionButton)
+
+    val goButton = chromePill("▶ Go", true) { openAddressBarValue() }
+    goButton.layoutParams = LinearLayout.LayoutParams(dp(if (compactUi) 72 else 78), dp(if (compactUi) 50 else 42)).apply {
+      marginEnd = dp(if (compactUi) 2 else 4)
+    }
+    addressRow.addView(goButton)
+
+    if (!compactUi) {
+      addressRow.addView(btn("⛶ Full Screen", "Full screen") { setFullScreenMode(true, true) }, fixedButtonLp(104, 46))
+    }
+
+    header.addView(addressRow, LinearLayout.LayoutParams(-1, dp(if (compactUi) 62 else 56)))
 
     // Main shortcut toolbar.
     val navScroll = HorizontalScrollView(this).apply {
