@@ -113,10 +113,10 @@ object TimedSiteScheduler {
   }
 
   private fun pendingIntent(context: Context, url: String): PendingIntent {
-    val intent = Intent(context, BrowserActivity::class.java).apply {
+    val intent = Intent(context, GeckoBrowserActivity::class.java).apply {
       action = "com.learnwithchampak.tv.TIMED_SITE_OPEN"
-      putExtra(BrowserActivity.EXTRA_URL, url)
-      putExtra(BrowserActivity.EXTRA_TIMED_OPEN, true)
+      putExtra(GeckoBrowserActivity.EXTRA_URL, url)
+      putExtra(GeckoBrowserActivity.EXTRA_TIMED_OPEN, true)
       addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
     }
     return PendingIntent.getActivity(
